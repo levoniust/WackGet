@@ -1,0 +1,37 @@
+# Warnings and exploit mitigations for WackGet's own targets (not for bundled libcurl).
+
+function(wg_harden target)
+  if(MSVC)
+    # C4706 (assignment in a condition) is this codebase's style since 2002: if((p= f()))
+    target_compile_options(${target} PRIVATE /W4 /wd4706 /utf-8 /sdl /guard:cf)
+    if(WG_WERROR)
+      target_compile_options(${target} PRIVATE /WX)
+    endif()
+    get_target_property(type ${target} TYPE)
+    if(type STREQUAL "EXECUTABLE")
+      target_link_options(${target} PRIVATE /guard:cf /DYNAMICBASE /NXCOMPAT)
+      if(CMAKE_SIZEOF_VOID_P EQUAL 8 AND NOT CMAKE_SYSTEM_PROCESSOR MATCHES "ARM64|arm64|aarch64")
+        target_link_options(${target} PRIVATE /CETCOMPAT /HIGHENTROPYVA)
+      endif()
+    endif()
+  else()
+    target_compile_options(${target} PRIVATE -Wall -Wextra -Wformat=2 -Wvla -Wno-unused-parameter
+                                             -fstack-protector-strong)
+    if(WG_WERROR)
+      target_compile_options(${target} PRIVATE -Werror)
+    endif()
+    if(NOT WG_SANITIZE)
+      # -U first: Ubuntu's gcc already defines it, and a redefinition warning would break -Werror
+      target_compile_options(${target} PRIVATE
+        "$<$<CONFIG:Release,RelWithDebInfo,MinSizeRel>:-U_FORTIFY_SOURCE;-D_FORTIFY_SOURCE=3>")
+    endif()
+    if(NOT APPLE)
+      target_link_options(${target} PRIVATE -Wl,-z,relro,-z,now -Wl,-z,noexecstack)
+    endif()
+  endif()
+  if(WG_SANITIZE AND NOT MSVC)
+    target_compile_options(${target} PRIVATE -fsanitize=address,undefined -fno-sanitize-recover=all
+                                             -fno-omit-frame-pointer)
+    target_link_options(${target} PRIVATE -fsanitize=address,undefined)
+  endif()
+endfunction()

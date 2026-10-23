@@ -1,0 +1,2 @@
+see http://a/x.zip, (https://b/y_(z)) ftp://f/g 'http://q/r' h://no xhttp://m/n
+http://c/%20d.iso.
