@@ -20,17 +20,26 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Install libcurl
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libcurl4-openssl-dev
+      - name: Install libcurl, wxWidgets, libsecret, Xvfb
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libcurl4-openssl-dev libwxgtk3.2-dev libsecret-1-dev \
+            pkg-config xvfb imagemagick
       - name: Build (Release, warnings are errors)
         run: |
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DWG_WERROR=ON
           cmake --build build -j4
       - name: Test
         run: ctest --test-dir build --output-on-failure
+      - name: Window test (every skin, real downloads from a local server, screenshots)
+        run: xvfb-run -a -s "-screen 0 1280x800x24" python3 tests/gui_demo.py build/wackget shots
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: screenshots-linux-${{ matrix.arch }}
+          path: shots/
       - name: Build + test with AddressSanitizer and UBSan
         run: |
-          cmake -S . -B build-asan -DCMAKE_BUILD_TYPE=Debug -DWG_SANITIZE=ON -DWG_WERROR=ON
+          cmake -S . -B build-asan -DCMAKE_BUILD_TYPE=Debug -DWG_SANITIZE=ON -DWG_WERROR=ON -DWG_GUI=OFF
           cmake --build build-asan -j4
           ctest --test-dir build-asan --output-on-failure
 
@@ -41,7 +50,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install tools
-        run: apt-get update && apt-get install -y --no-install-recommends build-essential cmake libcurl4-openssl-dev python3 ca-certificates
+        run: apt-get update && apt-get install -y --no-install-recommends build-essential cmake libcurl4-openssl-dev python3 ca-certificates \
+            libwxgtk3.2-dev libsecret-1-dev pkg-config
       - name: Build + test
         run: |
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DWG_WERROR=ON
@@ -62,7 +72,7 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.13'
-      - name: Build (MSVC, libcurl with Schannel, warnings are errors)
+      - name: Build (MSVC, libcurl with Schannel, wxWidgets 3.3, warnings are errors)
         run: |
           cmake -S . -B build -A ${{ matrix.arch }} -DWG_WERROR=ON
           cmake --build build --config Release -j 4
@@ -72,10 +82,19 @@ jobs:
         run: |
           build\Release\wgdl.exe -d dl -t 3 https://curl.se/download/curl-8.23.0.tar.xz.asc
           if ((Get-Item dl\curl-8.23.0.tar.xz.asc).Length -lt 100) { exit 1 }
+      - name: Window test (every skin, real downloads from a local server, screenshots)
+        run: python tests/gui_demo.py build\Release\WackGet.exe shots
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: screenshots-windows-${{ matrix.arch }}
+          path: shots/
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: wgdl-windows-${{ matrix.arch }}
-          path: build/Release/wgdl.exe
+          name: WackGet-windows-${{ matrix.arch }}
+          path: |
+            build/Release/WackGet.exe
+            build/Release/wgdl.exe
 
   fuzz:
     name: Fuzz (libFuzzer, 60 s per target)
