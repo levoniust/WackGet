@@ -411,8 +411,13 @@ static void test_names(void)
   memset(url+9, 'a', 300);
   strcpy(url+309, ".zip");
   got= wg_fs_name_from_url(url);
-  CHECK(strlen(got)==240);
-  CHECK(strcmp(got+236, ".zip")==0);
+  CHECK(strlen(got)==239); /* one byte spare for a reserved-name '_' */
+  CHECK(strcmp(got+235, ".zip")==0);
+  wg_free(got);
+  memset(url+9, 'a', 238); /* the cut lands just after a space (found by libFuzzer) */
+  strcpy(url+247, " bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
+  got= wg_fs_name_from_url(url);
+  CHECK(strlen(got)==238 && got[237]=='a');
   wg_free(got);
 }
 

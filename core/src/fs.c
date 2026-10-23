@@ -127,6 +127,20 @@ char *wg_fs_name_from_url(const char *url)
   }
   wg_free(raw.p);
 
+  /* Shorten first (one byte spare for the '_' below), keeping a short extension and cutting on a
+     UTF-8 boundary; then trim, so a cut can't leave a trailing space or dot. */
+  if(out.len>WG_NAME_MAX-1) {
+    const char *dot= strrchr(out.p, '.');
+    size_t ext= (dot && out.len-(size_t)(dot-out.p)<=16)? out.len-(size_t)(dot-out.p): 0;
+    size_t keep= WG_NAME_MAX-1-ext;
+
+    while(keep>0 && ((unsigned char)out.p[keep]&0xc0)==0x80) {
+      keep--;
+    }
+    memmove(out.p+keep, out.p+out.len-ext, ext+1);
+    out.len= keep+ext;
+  }
+
   /* no leading spaces, no trailing dots or spaces (Windows drops them) */
   i= 0;
   while(out.p[i]==' ') {
@@ -150,17 +164,6 @@ char *wg_fs_name_from_url(const char *url)
     wg_buf_add(&b, out.p, out.len);
     wg_free(out.p);
     out= b;
-  }
-  if(out.len>WG_NAME_MAX) { /* keep a short extension, cut on a UTF-8 boundary */
-    const char *dot= strrchr(out.p, '.');
-    size_t ext= (dot && out.len-(size_t)(dot-out.p)<=16)? out.len-(size_t)(dot-out.p): 0;
-    size_t keep= WG_NAME_MAX-ext;
-
-    while(keep>0 && ((unsigned char)out.p[keep]&0xc0)==0x80) {
-      keep--;
-    }
-    memmove(out.p+keep, out.p+out.len-ext, ext+1);
-    out.len= keep+ext;
   }
   return out.p;
 }
