@@ -1,0 +1,28 @@
+# Build output
+/build*/
+/out/
+*.obj
+*.o
+*.res
+*.RES
+*.aps
+*.pch
+*.pdb
+*.ilk
+*.exp
+*.lib
+*.a
+*.exe
+*.dll
+*.so
+Debug/
+Release/
+# Editors / tools
+.vs/
+.vscode/
+CMakeUserPresets.json
+# Fuzzing
+crash-*
+leak-*
+timeout-*
+oom-*
