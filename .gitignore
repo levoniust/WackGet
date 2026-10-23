@@ -26,3 +26,5 @@ crash-*
 leak-*
 timeout-*
 oom-*
+# Python
+__pycache__/
