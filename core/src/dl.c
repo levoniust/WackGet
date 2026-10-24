@@ -75,6 +75,7 @@ struct wg_dl {
   int64_t local_size, local_mtime;
   int64_t offset, attempt_start;
   char errbuf[CURL_ERROR_SIZE];
+  struct wg_dl *claim_next; /* in the list of files being written, while claimed */
 };
 
 typedef enum { R_DONE, R_RETRY, R_RESTART, R_FATAL, R_STOPPED } result_t;
@@ -82,14 +83,65 @@ typedef enum { R_DONE, R_RETRY, R_RESTART, R_FATAL, R_STOPPED } result_t;
 /* How an attempt treats an existing local file */
 enum { MODE_TIMESTAMP, MODE_CONTINUE, MODE_FRESH };
 
+/* Files being written. Two queued links can have the same file name (the name comes from the
+   URL, as with wget); they must not write the same file at the same time, so the second waits
+   for the first and then goes by the usual rules (up to date, continue, or download again). */
+static wg_mutex claims_lock;
+static wg_dl *claims;
+
 int wg_global_init(void)
 {
+  mutex_init(&claims_lock);
   return curl_global_init(CURL_GLOBAL_DEFAULT)==CURLE_OK? WG_OK: WG_ERR_IO;
 }
 
 void wg_global_cleanup(void)
 {
   curl_global_cleanup();
+  mutex_destroy(&claims_lock);
+}
+
+static int same_path(const char *a, const char *b)
+{
+#ifdef _WIN32
+  return _stricmp(a, b)==0; /* NTFS: "A.zip" and "a.zip" are one file */
+#else
+  return strcmp(a, b)==0;
+#endif
+}
+
+static int claim(wg_dl *dl)
+{
+  wg_dl *o;
+  int ok= 1;
+
+  mutex_lock(&claims_lock);
+  for(o= claims; o; o= o->claim_next) {
+    if(same_path(o->info.path, dl->info.path)) {
+      ok= 0;
+      break;
+    }
+  }
+  if(ok) {
+    dl->claim_next= claims;
+    claims= dl;
+  }
+  mutex_unlock(&claims_lock);
+  return ok;
+}
+
+static void unclaim(wg_dl *dl)
+{
+  wg_dl **pp;
+
+  mutex_lock(&claims_lock);
+  for(pp= &claims; *pp; pp= &(*pp)->claim_next) {
+    if(*pp==dl) {
+      *pp= dl->claim_next;
+      break;
+    }
+  }
+  mutex_unlock(&claims_lock);
 }
 
 static int stop_requested(wg_dl *dl)
@@ -362,7 +414,26 @@ static void finish(wg_dl *dl, wg_dl_state st)
   mutex_unlock(&dl->lock);
 }
 
+static void run_claimed(wg_dl *dl);
+
 static void run(wg_dl *dl)
+{
+  if(!claim(dl)) {
+    set_message(dl, "Waiting: another download is writing this file");
+    while(!claim(dl)) {
+      if(stop_requested(dl)) {
+        finish(dl, WG_DL_STOPPED);
+        return;
+      }
+      sleep_ms(200);
+    }
+    set_message(dl, "");
+  }
+  run_claimed(dl);
+  unclaim(dl);
+}
+
+static void run_claimed(wg_dl *dl)
 {
   int tries= 0, mode= dl->resume? MODE_CONTINUE: MODE_TIMESTAMP;
 

@@ -203,13 +203,13 @@ static void test_redirects_and_errors(void)
   }
 
   in= run("/flaky.bin?id=1", 0, 0); /* 503 once, then fine */
-  CHECK(in.state==WG_DL_DONE && content_ok("flaky.bin", SIZE));
+  CHECK(in.state==WG_DL_DONE && content_ok("flaky.bin@id=1", SIZE));
 
   in= run("/always503", 0, 3);
   CHECK(in.state==WG_DL_FAILED && in.prog.error==503);
 
   in= run("/drop.bin?id=1", 0, 0); /* connection dropped halfway: resumes */
-  CHECK(in.state==WG_DL_DONE && content_ok("drop.bin", SIZE));
+  CHECK(in.state==WG_DL_DONE && content_ok("drop.bin@id=1", SIZE));
 
   {
     wg_dl_opts o;

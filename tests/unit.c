@@ -386,7 +386,12 @@ static void test_names(void)
 {
   char url[400], *got;
 
-  NAME("http://h/dir/file.zip?x=1#f", "file.zip");
+  NAME("http://h/dir/file.zip?x=1#f", "file.zip@x=1"); /* wget 1.10 on Windows, as 1.2.x */
+  NAME("http://h/dir/file.zip#f", "file.zip");
+  NAME("http://h/d.php?id=1&p=a/b", "d.php@id=1&p=a_b");
+  NAME("http://h/d.php?id=a%20b", "d.php@id=a b");
+  NAME("http://h/?x=1", "index.html@x=1");
+  NAME("http://h/f.zip?", "f.zip");
   NAME("http://h/", "index.html");
   NAME("http://h", "index.html");
   NAME("http://h/dir/", "index.html");

@@ -21,15 +21,15 @@ SKINS = ["classic", "win11", "material1", "win11:dark", "material1:dark"]
 
 
 class DemoHandler(run_engine.Handler):
-    """/dl/<name>?size=N&rate=BYTES_PER_SEC serves N bytes at that rate; the rest as in run_engine."""
+    """/dl/<size>/<bytes per second, 0 = flat out>/<name> serves that many bytes at that rate
+    (in the path, not a query, which would become part of the file name); the rest as in run_engine."""
 
     def do_GET(self):
         url = urllib.parse.urlparse(self.path)
         if not url.path.startswith("/dl/"):
             return super().do_GET()
-        q = urllib.parse.parse_qs(url.query)
-        size = int(q.get("size", ["100000"])[0])
-        rate = int(q.get("rate", ["0"])[0])
+        _, _, size, rate, _ = url.path.split("/", 4)
+        size, rate = int(size), int(rate)
         start = 0
         rng = self.headers.get("Range")
         if rng and rng.startswith("bytes="):
@@ -85,13 +85,13 @@ def main():
     threading.Thread(target=server.serve_forever, daemon=True).start()
     base = f"http://127.0.0.1:{server.server_address[1]}"
     queue = [
-        (f"{base}/dl/debian-13.1.0-amd64-netinst.iso?size=790000000&rate=1800000", 0),
-        (f"{base}/dl/WackGet-1.2.4-setup.exe?size=1450000", 0),
-        (f"{base}/dl/Big_Buck_Bunny_1080p.mov?size=725000000&rate=950000", 0),
+        (f"{base}/dl/790000000/1800000/debian-13.1.0-amd64-netinst.iso", 0),
+        (f"{base}/dl/1450000/0/WackGet-1.2.4-setup.exe", 0),
+        (f"{base}/dl/725000000/950000/Big_Buck_Bunny_1080p.mov", 0),
         (f"{base}/missing/old-mirror-file.zip", 0),
-        (f"{base}/dl/blender-4.5.3-linux-x64.tar.xz?size=380000000&rate=2600000", 0),
-        (f"{base}/dl/podcast-episode-212.mp3?size=91000000&rate=500000", 0),
-        (f"{base}/dl/linux-6.17.tar.xz?size=150000000&rate=500000", 2),  # paused
+        (f"{base}/dl/380000000/2600000/blender-4.5.3-linux-x64.tar.xz", 0),
+        (f"{base}/dl/91000000/500000/podcast-episode-212.mp3", 0),
+        (f"{base}/dl/150000000/500000/linux-6.17.tar.xz", 2),  # paused
     ]
     failures = 0
     for skin in skins:

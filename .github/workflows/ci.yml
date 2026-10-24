@@ -26,7 +26,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends libcurl4-openssl-dev libwxgtk3.2-dev libgtk-3-dev \
             libsecret-1-dev pkg-config xvfb xauth imagemagick libayatana-appindicator3-1 openbox xdotool \
             xdg-utils libfile-mimeinfo-perl desktop-file-utils shared-mime-info python3-gi gir1.2-glib-2.0 \
-            dbus-daemon
+            dbus-daemon xclip
       - name: Build (Release, warnings are errors)
         run: |
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DWG_WERROR=ON
@@ -37,6 +37,8 @@ jobs:
         run: xvfb-run -a -s "-screen 0 1280x800x24" python3 tests/gui_demo.py build/wackget shots
       - name: Desktop test (tray icon over StatusNotifier, X11 hot key, --toggle, .wgq association)
         run: dbus-run-session -- xvfb-run -a -s "-screen 0 1280x800x24" python3 tests/linux_desktop.py build/wackget
+      - name: Edge cases (Unicode, same names, resume after a kill, HTML paste, 300 links, real HTTPS)
+        run: xvfb-run -a -s "-screen 0 1280x800x24" python3 tests/edge_test.py build/wackget --internet
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()
         with:
@@ -151,6 +153,8 @@ jobs:
           if ((Get-Item dl\curl-8.23.0.tar.xz.asc).Length -lt 100) { exit 1 }
       - name: Window test (every skin, real downloads from a local server, screenshots)
         run: python tests/gui_demo.py build\Release\WackGet.exe shots
+      - name: Edge cases (Unicode, same names, resume after a kill, HTML paste, 300 links, tray, real HTTPS)
+        run: python tests/edge_test.py build\Release\WackGet.exe --internet
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
@@ -215,10 +219,15 @@ jobs:
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: WackGet-setup
-      - name: Silent install (per user, default choices)
+      - name: Setup clicked through page by page, installed again over itself, and run while WackGet runs
+        run: python tests/installer_test.py (Get-Item WackGet-*-setup.exe).FullName setup-shots
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: setup-screenshots-${{ matrix.arch }}
+          path: setup-shots/
+      - name: Check the installed files (default choices)
         run: |
-          $setup = (Get-Item WackGet-*-setup.exe).FullName
-          Start-Process $setup -ArgumentList '/S' -Wait
           $dir = "$env:LOCALAPPDATA\Programs\WackGet"
           foreach ($f in 'WackGet.exe', 'WackGet.html', 'LICENSE.txt', 'uninst.exe') {
             if (-not (Test-Path "$dir\$f")) { throw "missing $f" }

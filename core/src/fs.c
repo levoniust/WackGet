@@ -83,8 +83,8 @@ static int is_reserved_windows_name(const char *name)
 
 char *wg_fs_name_from_url(const char *url)
 {
-  const char *path, *seg;
-  size_t n, i;
+  const char *path, *seg, *q;
+  size_t n, qn, i;
   wg_buf raw= {0}, out= {0};
 
   path= strstr(url, "://");
@@ -95,16 +95,35 @@ char *wg_fs_name_from_url(const char *url)
   while(seg>path && seg[-1]!='/') {
     seg--;
   }
+  /* The query stays part of the name, '?' becoming '@', as the Windows wget of 1.2.x did
+     ("download.php@id=7"): different links then get different files. */
+  q= (path[n]=='?')? path+n+1: NULL;
+  qn= q? strcspn(q, "#"): 0;
   n= (size_t)(path+n-seg);
 
   /* percent-decode */
   wg_buf_add(&raw, "", 0);
+  if(n==0 && qn>0) {
+    seg= "index.html"; /* "http://h/?x=1" -> "index.html@x=1", like wget */
+    n= strlen(seg);
+  }
   for(i= 0; i<n; i++) {
     if(seg[i]=='%' && i+2<n && hexval(seg[i+1])>=0 && hexval(seg[i+2])>=0) {
       wg_buf_addc(&raw, (char)(hexval(seg[i+1])*16+hexval(seg[i+2])));
       i+= 2;
     } else {
       wg_buf_addc(&raw, seg[i]);
+    }
+  }
+  if(qn>0) {
+    wg_buf_addc(&raw, '@');
+    for(i= 0; i<qn; i++) {
+      if(q[i]=='%' && i+2<qn && hexval(q[i+1])>=0 && hexval(q[i+2])>=0) {
+        wg_buf_addc(&raw, (char)(hexval(q[i+1])*16+hexval(q[i+2])));
+        i+= 2;
+      } else {
+        wg_buf_addc(&raw, q[i]);
+      }
     }
   }
 
