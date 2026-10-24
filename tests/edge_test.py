@@ -175,6 +175,32 @@ if WIN:
         for h in windows(pid, title):
             user32.PostMessageW(h, 0x0111, cmd, 0)  # WM_COMMAND
 
+    user32.GetDlgItem.restype = wintypes.HWND
+    user32.GetDlgItem.argtypes = [wintypes.HWND, ctypes.c_int]
+    user32.FindWindowExW.restype = wintypes.HWND
+    user32.FindWindowExW.argtypes = [wintypes.HWND, wintypes.HWND, wintypes.LPCWSTR, wintypes.LPCWSTR]
+    user32.GetDlgCtrlID.argtypes = [wintypes.HWND]
+
+    def click(pid, title, button_id):
+        """Click a dialog's button (by control id) the way a mouse click would (BM_CLICK)"""
+        def find(parent):
+            child = None
+            while True:
+                child = user32.FindWindowExW(parent, child, None, None)
+                if not child:
+                    return None
+                if user32.GetDlgCtrlID(child) == button_id:
+                    return child
+                deeper = find(child)
+                if deeper:
+                    return deeper
+        for h in windows(pid, title):
+            b = find(h)
+            if b:
+                user32.PostMessageW(b, 0x00F5, 0, 0)  # BM_CLICK
+                return True
+        return False
+
     def keys(pid, title, combo):
         """Bring the window forward and type a key combination like 'ctrl+v' or 'n'. Returns
         False if the window couldn't be made the foreground one (then the keys are not sent)."""
@@ -429,6 +455,29 @@ def t_exit_prompt():
         c.done()
 
 
+def t_dialogs():
+    """Windows: Preferences (OK saves), About and Add new item open and close; WackGet lives on"""
+    c = Case("dialogs")
+    try:
+        p = c.start()
+        wait_for(lambda: windows(p.pid, "WackGet"), 15)
+        time.sleep(1)
+        for cmd, title, close_id in ((6001, "WackGet Preferences", 5100),  # ID_FILE_PREFERENCES (wx 3.3), wxID_OK
+                                     (5014, "About WackGet", 5100),        # wxID_ABOUT
+                                     (5002, "Add new item...", 5101)):     # wxID_NEW, wxID_CANCEL
+            command(p.pid, "WackGet", cmd)
+            opened = wait_for(lambda: windows(p.pid, title), 10)
+            clicked = click(p.pid, title, close_id)
+            closed = wait_for(lambda: not windows(p.pid, title), 10)
+            check(f"dialog '{title}' opens and closes", opened and closed and p.poll() is None,
+                  f"opened={opened} clicked={clicked} closed={closed}")
+        with open(c.cfg, encoding="utf-8") as f:
+            saved = f.read()
+        check("Preferences OK saved the settings", "MaxThreads" in saved and "Skin" in saved, saved[:300])
+    finally:
+        c.done()
+
+
 def t_tray_close():
     c = Case("tray", extra="ShowInSystray=1\n")
     try:
@@ -480,7 +529,7 @@ def main():
     tests = [t_unicode, t_same_name, t_long_link, t_crash_resume, t_paste_html, t_paste_many, t_second_instance,
              t_exit_prompt]
     if WIN:
-        tests.append(t_tray_close)  # Linux tray: tests/linux_desktop.py
+        tests += [t_dialogs, t_tray_close]  # Linux: dialogs + tray in tests/linux_desktop.py
     if "--internet" in sys.argv:
         tests.append(t_internet)
     for t in tests:
