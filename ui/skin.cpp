@@ -97,7 +97,8 @@ Skin make_skin(SkinId id, wxWindow *win)
   s.dark= want_dark();
 
   if(id==SkinId::Win11) {
-    wxString face= first_face({"Segoe UI Variable Text", "Segoe UI", "Selawik", "Noto Sans", "Cantarell"});
+    /* Not "Segoe UI Variable": GDI+ (wxGraphicsContext on Windows) drops some glyphs of variable fonts */
+    wxString face= first_face({"Segoe UI", "Selawik", "Noto Sans", "Cantarell"});
 
     s.font= make_font(face, 9.5, wxFONTWEIGHT_NORMAL);
     s.header_font= make_font(face, 9, wxFONTWEIGHT_NORMAL);
