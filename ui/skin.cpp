@@ -100,7 +100,7 @@ Skin make_skin(SkinId id, wxWindow *win)
     /* Not "Segoe UI Variable": GDI+ (wxGraphicsContext on Windows) drops some glyphs of variable fonts */
     wxString face= first_face({"Segoe UI", "Selawik", "Noto Sans", "Cantarell"});
 
-    s.font= make_font(face, 9.5, wxFONTWEIGHT_NORMAL);
+    s.font= make_font(face, 10, wxFONTWEIGHT_NORMAL); /* whole points: GDI+ lost "." glyphs at 9.5 */
     s.header_font= make_font(face, 9, wxFONTWEIGHT_NORMAL);
     s.bar_font= make_font(face, 9, wxFONTWEIGHT_NORMAL);
     s.row_h= px(32);
