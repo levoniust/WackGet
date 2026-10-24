@@ -39,6 +39,7 @@ enum {
   ID_EDIT_COPY_ALT,  /* Ctrl+Insert */
   ID_EDIT_PASTE_ALT, /* Shift+Insert */
   ID_TRAY_SHOWHIDE,
+  ID_TRAY_PASTE, /* Add From Clipboard in the Linux tray menu */
 };
 
 class MainFrame : public wxFrame, public ViewOwner {
@@ -114,6 +115,7 @@ private:
   wxIcon busy_icon_;
   wxString idle_msg_, hotkey_text_;
   bool menu_open_= false, update_pending_= false, exiting_= false, hotkey_on_= false;
+  wxLongLong paste_when_active_= 0; /* Wayland: tray paste waiting for the window to get focus */
   wxRect normal_rect_;
   std::string proxy_pass_;
 };
@@ -138,6 +140,7 @@ void platform_dark_title_bar(wxFrame *f, bool dark);
 void platform_init_app();                   /* before the first window */
 AppTray *platform_make_tray(MainFrame *f);  /* nullptr: no StatusNotifier host here */
 wxString platform_hotkey_start(MainFrame *f, bool on); /* the key's text, empty if none */
+bool platform_clipboard_needs_focus();      /* Wayland: only the focused window may read it */
 #endif
 
 #endif

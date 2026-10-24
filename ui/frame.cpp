@@ -23,6 +23,7 @@
 #include <wx/sizer.h>
 #include <wx/statusbr.h>
 #include <wx/taskbar.h>
+#include <wx/time.h>
 #include <wx/utils.h>
 
 #include "icons.inc"
@@ -310,6 +311,16 @@ MainFrame::MainFrame(): wxFrame(nullptr, wxID_ANY, "WackGet", wxDefaultPosition,
     e.Skip();
   });
   Bind(wxEVT_SHOW, [this](wxShowEvent &e) { request_update(); e.Skip(); });      /* tray menu: Show/Hide */
+  Bind(wxEVT_ACTIVATE, [this](wxActivateEvent &e) {
+    if(e.GetActive() && paste_when_active_!=0) {
+      bool fresh= wxGetLocalTimeMillis()-paste_when_active_<5000;
+      paste_when_active_= 0;
+      if(fresh) {
+        CallAfter([this] { paste(false); });
+      }
+    }
+    e.Skip();
+  });
   Bind(wxEVT_ICONIZE, [this](wxIconizeEvent &e) { request_update(); e.Skip(); });
   Bind(wxEVT_SIZE, [this](wxSizeEvent &e) { remember_normal_rect(); e.Skip(); });
   Bind(wxEVT_MOVE, [this](wxMoveEvent &e) { remember_normal_rect(); e.Skip(); });
@@ -953,6 +964,18 @@ void MainFrame::on_menu(wxCommandEvent &e)
   }
   case wxID_PASTE:
   case ID_EDIT_PASTE_ALT:
+    paste(false);
+    break;
+  case ID_TRAY_PASTE:
+#ifdef __WXGTK__
+    /* Wayland gives the clipboard only to the window with the focus: bring WackGet forward
+       and paste once it has it (if that happens soon, so a later click can't surprise). */
+    if(platform_clipboard_needs_focus() && !IsActive()) {
+      paste_when_active_= wxGetLocalTimeMillis();
+      show_from_outside();
+      break;
+    }
+#endif
     paste(false);
     break;
   case ID_QUEUE_CLEARALLCOMPLETE: {

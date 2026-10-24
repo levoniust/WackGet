@@ -16,6 +16,9 @@
 #include <string>
 
 #include <gtk/gtk.h>
+#ifdef GDK_WINDOWING_WAYLAND
+#include <gdk/gdkwayland.h>
+#endif
 #ifdef GDK_WINDOWING_X11
 #include <X11/Xatom.h>
 #include <X11/Xlib.h>
@@ -42,6 +45,15 @@ void platform_init_app()
   /* Wayland app_id and X11 WM_CLASS: lets the desktop match the window to its .desktop file */
   g_set_prgname(app_id);
   gdk_set_program_class("WackGet");
+}
+
+bool platform_clipboard_needs_focus()
+{
+#ifdef GDK_WINDOWING_WAYLAND
+  return GDK_IS_WAYLAND_DISPLAY(gdk_display_get_default());
+#else
+  return false;
+#endif
 }
 
 /* ------------------------------------------------------------------ helpers */
@@ -215,7 +227,7 @@ public:
     gtk_menu_shell_append(GTK_MENU_SHELL(menu_), gtk_separator_menu_item_new());
     /* IDM_TRAY */
     add("Add _New Item...", wxID_NEW);
-    add("Add From _Clipboard", wxID_PASTE); /* always on: the clipboard is only readable once asked */
+    add("Add From _Clipboard", ID_TRAY_PASTE); /* always on: on Wayland it can't be read from here */
     gtk_menu_shell_append(GTK_MENU_SHELL(menu_), gtk_separator_menu_item_new());
     add("_Preferences...", ID_FILE_PREFERENCES);
     add("Open Download _Folder", ID_FILE_OPENDOWNLOADFOLDER);
@@ -428,15 +440,6 @@ public:
   void start(GDBusConnection *bus)
   {
     bus_= (GDBusConnection *)g_object_ref(bus);
-    /* Tell the portal who we are (no Flatpak or systemd scope to tell it for us); harmless if
-       this portal is too old to have the registry. */
-    GVariant *r= g_dbus_connection_call_sync(bus_, "org.freedesktop.portal.Desktop", "/org/freedesktop/portal/desktop",
-                                             "org.freedesktop.host.portal.Registry", "Register",
-                                             g_variant_new("(sa{sv})", app_id, nullptr), nullptr,
-                                             G_DBUS_CALL_FLAGS_NONE, 3000, nullptr, nullptr);
-    if(r) {
-      g_variant_unref(r);
-    }
     activated_= g_dbus_connection_signal_subscribe(bus_, "org.freedesktop.portal.Desktop",
                                                    "org.freedesktop.portal.GlobalShortcuts", "Activated",
                                                    "/org/freedesktop/portal/desktop", nullptr,
@@ -464,6 +467,7 @@ public:
                              "org.freedesktop.portal.Session", "Close", nullptr, nullptr, G_DBUS_CALL_FLAGS_NONE,
                              -1, nullptr, nullptr, nullptr);
     }
+    g_dbus_connection_close_sync(bus_, nullptr, nullptr); /* ours alone: unref would leave it open */
     g_object_unref(bus_);
   }
 
@@ -590,9 +594,27 @@ wxString platform_hotkey_start(MainFrame *f, bool on)
     return wxString();
   }
 #endif
-  GDBusConnection *bus= g_bus_get_sync(G_BUS_TYPE_SESSION, nullptr, nullptr);
+  /* A connection of our own: the portal fixes a connection's app id at its first request, and
+     GTK has already asked it things on the shared one (colour scheme...) without saying who we
+     are, so GNOME would refuse the shortcut ("invalid app_id"). */
+  gchar *addr= g_dbus_address_get_for_bus_sync(G_BUS_TYPE_SESSION, nullptr, nullptr);
+  GDBusConnection *bus= addr? g_dbus_connection_new_for_address_sync(
+                                  addr, GDBusConnectionFlags(G_DBUS_CONNECTION_FLAGS_AUTHENTICATION_CLIENT|
+                                                             G_DBUS_CONNECTION_FLAGS_MESSAGE_BUS_CONNECTION),
+                                  nullptr, nullptr, nullptr):
+                            nullptr;
+  g_free(addr);
   if(!bus) {
     return wxString();
+  }
+  /* Tell the portal who we are before anything else (no Flatpak, and no app scope when started
+     from a terminal); harmless if this portal is too old to have the registry. */
+  GVariant *r= g_dbus_connection_call_sync(bus, "org.freedesktop.portal.Desktop", "/org/freedesktop/portal/desktop",
+                                           "org.freedesktop.host.portal.Registry", "Register",
+                                           g_variant_new("(sa{sv})", app_id, nullptr), nullptr,
+                                           G_DBUS_CALL_FLAGS_NONE, 3000, nullptr, nullptr);
+  if(r) {
+    g_variant_unref(r);
   }
   wxString text;
   if(PortalHotKey::available(bus)) {
@@ -601,6 +623,8 @@ wxString platform_hotkey_start(MainFrame *f, bool on)
     hotkey.reset(h);
     h->start(bus);
     text= "asking the desktop..."; /* set_hotkey_text() follows */
+  } else {
+    g_dbus_connection_close_sync(bus, nullptr, nullptr);
   }
   g_object_unref(bus);
   return text;
@@ -704,6 +728,9 @@ static bool write_user_files()
 static void remove_default()
 {
   wxString path= config_home()+"/mimeapps.list";
+  if(!wxFileExists(path)) {
+    return; /* (wx would show an error box for a missing file) */
+  }
   wxFileInputStream in(path);
   if(!in.IsOk()) {
     return;
@@ -742,10 +769,9 @@ bool platform_assoc_set(bool on)
   }
   if(platform_assoc_get()) { /* only undo our own association */
     remove_default();
-    wxString p= user_desktop_path();
-    wxFileInputStream in(p);
-    wxString text;
-    if(in.IsOk()) {
+    wxString p= user_desktop_path(), text;
+    if(wxFileExists(p)) { /* not there when a package installed the launcher */
+      wxFileInputStream in(p);
       wxStringOutputStream s(&text);
       in.Read(s);
     }
