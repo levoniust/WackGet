@@ -68,6 +68,7 @@ if(WG_GUI AND NOT WG_FUZZ)
   if(WIN32)
     target_link_libraries(wackget PRIVATE advapi32 credui dwmapi shell32 ole32)
     set_target_properties(wackget PROPERTIES OUTPUT_NAME WackGet)
+    target_link_options(wackget PRIVATE /MANIFEST:NO) # the manifest comes from wx.rc
   else()
     find_package(PkgConfig)
     if(PKG_CONFIG_FOUND)
