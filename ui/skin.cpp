@@ -155,7 +155,7 @@ Skin make_skin(SkinId id, wxWindow *win)
 
   s.font= make_font(face, 10, wxFONTWEIGHT_NORMAL);
   s.header_font= make_font(face, 10.5, wxFONTWEIGHT_MEDIUM);
-  s.bar_font= make_font(face, 9.5, wxFONTWEIGHT_NORMAL);
+  s.bar_font= make_font(face, 10, wxFONTWEIGHT_NORMAL);
   s.row_h= px(48);
   s.header_h= px(56);
   s.bar_h= px(32);
