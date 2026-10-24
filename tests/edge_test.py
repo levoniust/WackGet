@@ -205,6 +205,31 @@ if WIN:
             user32.GetClassNameW(g.hwndFocus, cls, 64)
         return f"active={g.hwndActive} focus={g.hwndFocus} ({cls.value})"
 
+    user32.SendMessageW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPVOID]
+
+    def edit_text(pid, title):
+        """Text of the first Edit control in that window"""
+        def find(parent):
+            child = None
+            while True:
+                child = user32.FindWindowExW(parent, child, None, None)
+                if not child:
+                    return None
+                cls = ctypes.create_unicode_buffer(32)
+                user32.GetClassNameW(child, cls, 32)
+                if cls.value == "Edit":
+                    return child
+                deeper = find(child)
+                if deeper:
+                    return deeper
+        for h in windows(pid, title):
+            e = find(h)
+            if e:
+                buf = ctypes.create_unicode_buffer(512)
+                user32.SendMessageW(e, 0x000D, 512, ctypes.cast(buf, wintypes.LPVOID))  # WM_GETTEXT
+                return buf.value
+        return None
+
     def topmost(pid):
         user32.GetWindowLongW.argtypes = [wintypes.HWND, ctypes.c_int]
         hs = windows(pid, "WackGet")
@@ -408,22 +433,35 @@ def t_crash_resume():
         c.done()
 
 
+KEYS_ARRIVE = True  # set by t_keys on Windows: can this desktop deliver typed keys at all?
+
+
 def t_keys():
-    """Windows: do typed shortcuts reach WackGet? Ctrl+A (Always on top) works whatever the
-    clipboard holds, so it tells key delivery apart from the paste rules."""
+    """Windows: can typed keys reach a program on this desktop at all (letters into a text box),
+    and do WackGet's shortcuts work (Ctrl+A = Always on top, nothing to do with the clipboard)?"""
+    global KEYS_ARRIVE
     c = Case("keys")
     try:
         p = c.start()
         wait_for(lambda: windows(p.pid, "WackGet"), 15)
         time.sleep(1)
+        command(p.pid, "WackGet", 5002)  # Add new item...
+        wait_for(lambda: windows(p.pid, "Add new item..."), 10)
+        time.sleep(0.5)
+        sent = keys(p.pid, "Add new item...", "q") and keys(p.pid, "Add new item...", "z")
+        typed = edit_text(p.pid, "Add new item...") or ""
+        print(f"  typed into the text box: {typed!r}; " + focus_info(), flush=True)
+        click(p.pid, "Add new item...", 5101)
+        wait_for(lambda: not windows(p.pid, "Add new item..."), 10)
+        KEYS_ARRIVE = sent and "qz" in typed.lower()
+        if not KEYS_ARRIVE:
+            print("  (this desktop doesn't deliver typed keys: keyboard checks skipped, the same actions"
+                  " are checked through the menu commands)", flush=True)
+            return
         before = topmost(p.pid)
-        sent = keys(p.pid, "WackGet", "ctrl+a")
-        print("  " + focus_info(), flush=True)
-        after = wait_for(lambda: topmost(p.pid) != before, 5)
-        if sent:
-            check("typed Ctrl+A (Always on top) reaches WackGet", after, f"topmost {before} -> {topmost(p.pid)}")
-        else:
-            print("  (no keyboard focus on this desktop: typed-key checks skipped)", flush=True)
+        keys(p.pid, "WackGet", "ctrl+a")
+        check("typed Ctrl+A (Always on top) works", wait_for(lambda: topmost(p.pid) != before, 5),
+              f"topmost {before} -> {topmost(p.pid)}")
     finally:
         c.done()
 
@@ -435,7 +473,7 @@ def t_paste_html():
         wait_for(lambda: windows(p.pid, "WackGet"), 15)
         set_clipboard(f'<p>Files: <a href="{BASE}/data/2500/0/from%20page.bin">from page</a> and '
                       f'<a href="javascript:alert(1)">bad</a></p>', html=True)
-        sent = keys(p.pid, "WackGet", "ctrl+v")
+        sent = KEYS_ARRIVE and keys(p.pid, "WackGet", "ctrl+v")
         got = wait_for(lambda: good_file(c.path("from page.bin"), 2500), 20 if sent else 2)
         if sent or not WIN:
             check("Ctrl+V of a web page (HTML clipboard): link downloaded", got,
@@ -457,7 +495,7 @@ def t_paste_many():
         p = c.start()
         wait_for(lambda: windows(p.pid, "WackGet"), 15)
         set_clipboard("\n".join(f"{BASE}/data/{1000 + i}/0/f{i:03d}.bin" for i in range(n)))
-        if not keys(p.pid, "WackGet", "ctrl+v"):
+        if not (KEYS_ARRIVE and keys(p.pid, "WackGet", "ctrl+v")):
             command(p.pid, "WackGet", 5033)
         ok = wait_for(lambda: os.path.isdir(c.dl) and len(os.listdir(c.dl)) >= n, 120)
         bad = [i for i in range(n) if not good_file(c.path(f"f{i:03d}.bin"), 1000 + i)]
@@ -496,7 +534,7 @@ def t_exit_prompt():
         check("closing with an unfinished queue asks to save it", asked)
         if asked:
             if WIN:
-                if not keys(p.pid, "Confirm", "n"):
+                if not (KEYS_ARRIVE and keys(p.pid, "Confirm", "n")):
                     for h in windows(p.pid, "Confirm"):  # wx 3.3 uses a task dialog: click No by id
                         user32.PostMessageW(h, 0x0466, 7, 0)  # TDM_CLICK_BUTTON, IDNO
             else:
