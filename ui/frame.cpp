@@ -575,6 +575,10 @@ void MainFrame::register_hotkey()
   }
 #elif defined(__WXGTK__)
   bool on= prefs::get_int("HotKey", 0)!=0;
+  if(on==hotkey_on_) {
+    return; /* unchanged: on Wayland, binding again could make the desktop ask again */
+  }
+  hotkey_on_= on;
   hotkey_text_= platform_hotkey_start(this, on);
   if(on && hotkey_text_.empty()) {
     wxMessageBox("Failed to register hot key Ctrl + Alt + W: another program has it, or this desktop has no "

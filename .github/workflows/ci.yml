@@ -38,6 +38,11 @@ jobs:
       - name: Desktop test (tray icon over StatusNotifier, X11 hot key, --toggle, .wgq association)
         run: dbus-run-session -- xvfb-run -a -s "-screen 0 1280x800x24" python3 tests/linux_desktop.py build/wackget
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure()
+        with:
+          name: desktop-test-linux-${{ matrix.arch }}
+          path: tests/out/
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: screenshots-linux-${{ matrix.arch }}
           path: shots/
@@ -112,6 +117,11 @@ jobs:
         run: xvfb-run -a -s "-screen 0 1280x800x24" python3 tests/gui_demo.py /usr/bin/wackget shots classic win11
       - name: Desktop test with the installed WackGet
         run: dbus-run-session -- xvfb-run -a -s "-screen 0 1280x800x24" python3 tests/linux_desktop.py /usr/bin/wackget
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure()
+        with:
+          name: desktop-test-debian-${{ matrix.arch }}
+          path: tests/out/
       - name: Remove it again
         run: apt-get remove -y wackget && test ! -e /usr/bin/wackget
 

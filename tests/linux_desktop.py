@@ -71,6 +71,15 @@ class Watcher:
         self.p.terminate()
 
 
+def shot(name, env):
+    """Screenshot plus the window list, for when a check fails (CI uploads tests/out/)"""
+    out = os.path.join(HERE, "out")
+    os.makedirs(out, exist_ok=True)
+    run("import", "-window", "root", os.path.join(out, name + ".png"), env=env)
+    r = run("xdotool", "search", "--onlyvisible", "--name", ".", "getwindowname", "%@", env=env)
+    print("  windows:", r.stdout.replace("\n", " | "), flush=True)
+
+
 def visible():
     r = run("xdotool", "search", "--onlyvisible", "--name", "^WackGet$")
     return len(r.stdout.split())
@@ -147,6 +156,9 @@ def main():
                                 (["Return"], 2)):
                 run("xdotool", "key", *keys, env=env)
                 time.sleep(pause)
+            r = run("xdotool", "search", "--onlyvisible", "--name", "Preferences|Error", env=env)
+            if r.stdout.strip():
+                shot("prefs-still-open", env)
 
         mime = "application/x-wackget-queue"
         prefs_toggle_assoc()
@@ -165,8 +177,14 @@ def main():
             check("association: launcher written and valid", os.path.exists(desktop) and r.returncode == 0,
                   r.stdout + r.stderr)
         prefs_toggle_assoc()
+        mimeapps = os.path.join(env["HOME"], ".config/mimeapps.list")
+        ours = open(mimeapps).read() if os.path.exists(mimeapps) else ""
+        check("association: our default removed again", f"{mime}=" not in ours, ours)
         r = run("xdg-mime", "query", "default", mime, env=env)
-        check("association: switched off again", r.stdout.strip() == "", r.stdout)
+        if os.path.exists("/usr/share/applications/io.github.levoniust.WackGet.desktop"):
+            pass  # installed: still the only app for .wgq, so xdg-mime keeps naming it
+        else:
+            check("association: switched off again", r.stdout.strip() == "", r.stdout)
 
         # Exit from the tray menu (empty queue: no question)
         watcher.click("Exit")
@@ -175,6 +193,7 @@ def main():
             check("tray menu: Exit quits", True)
         except subprocess.TimeoutExpired:
             check("tray menu: Exit quits", False)
+            shot("exit", env)
     finally:
         if app.poll() is None:
             app.kill()

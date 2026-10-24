@@ -28,3 +28,5 @@ timeout-*
 oom-*
 # Python
 __pycache__/
+# Test output
+tests/out/

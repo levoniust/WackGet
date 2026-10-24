@@ -113,7 +113,7 @@ private:
   wxIconBundle icons_;
   wxIcon busy_icon_;
   wxString idle_msg_, hotkey_text_;
-  bool menu_open_= false, update_pending_= false, exiting_= false;
+  bool menu_open_= false, update_pending_= false, exiting_= false, hotkey_on_= false;
   wxRect normal_rect_;
   std::string proxy_pass_;
 };
