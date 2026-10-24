@@ -230,6 +230,48 @@ if WIN:
                 return buf.value
         return None
 
+    def key_message(pid, combo):
+        """A key press as a message into WackGet's focused control, with Ctrl held in its keyboard
+        state: it goes through the same accelerator translation as real typing (for desktops
+        that don't deliver typed keys)"""
+        hs = windows(pid, "WackGet")
+        if not hs:
+            return False
+        tid = user32.GetWindowThreadProcessId(hs[0], None)
+        g = GUITHREADINFO(cbSize=ctypes.sizeof(GUITHREADINFO))
+        user32.GetGUIThreadInfo(tid, ctypes.byref(g))
+        target = g.hwndFocus or hs[0]
+        me = kernel32.GetCurrentThreadId()
+        parts = combo.split("+")
+        vk = ord(parts[-1].upper())
+        user32.AttachThreadInput(me, tid, True)  # share its keyboard state
+        try:
+            st = (ctypes.c_ubyte * 256)()
+            user32.GetKeyboardState(st)
+            if "ctrl" in parts:
+                st[0x11] = st[0xA2] = 0x80
+            user32.SetKeyboardState(st)
+            user32.PostMessageW(target, 0x0100, vk, 1)  # WM_KEYDOWN
+            user32.PostMessageW(target, 0x0101, vk, 0xC0000001)  # WM_KEYUP
+            time.sleep(1)
+            st[0x11] = st[0xA2] = 0
+            user32.SetKeyboardState(st)
+        finally:
+            user32.AttachThreadInput(me, tid, False)
+        return True
+
+    user32.GetMenu.restype = wintypes.HMENU
+    user32.GetMenu.argtypes = [wintypes.HWND]
+    user32.GetSubMenu.restype = wintypes.HMENU
+    user32.GetSubMenu.argtypes = [wintypes.HMENU, ctypes.c_int]
+
+    def menu_opened(pid, index):
+        """What opening a menu does to it (WM_INITMENUPOPUP): wx greys its items by their rules"""
+        for h in windows(pid, "WackGet"):
+            sub = user32.GetSubMenu(user32.GetMenu(h), index)
+            if sub:
+                user32.SendMessageW(h, 0x0117, sub, index)
+
     def topmost(pid):
         user32.GetWindowLongW.argtypes = [wintypes.HWND, ctypes.c_int]
         hs = windows(pid, "WackGet")
@@ -323,6 +365,12 @@ else:
         p.kill()
 
     def command(pid, title, cmd):
+        pass
+
+    def key_message(pid, combo):
+        return False
+
+    def menu_opened(pid, index):
         pass
 
 
@@ -454,13 +502,16 @@ def t_keys():
         click(p.pid, "Add new item...", 5101)
         wait_for(lambda: not windows(p.pid, "Add new item..."), 10)
         KEYS_ARRIVE = sent and "qz" in typed.lower()
-        if not KEYS_ARRIVE:
-            print("  (this desktop doesn't deliver typed keys: keyboard checks skipped, the same actions"
-                  " are checked through the menu commands)", flush=True)
-            return
         before = topmost(p.pid)
-        keys(p.pid, "WackGet", "ctrl+a")
-        check("typed Ctrl+A (Always on top) works", wait_for(lambda: topmost(p.pid) != before, 5),
+        if KEYS_ARRIVE:
+            keys(p.pid, "WackGet", "ctrl+a")
+            how = "typed"
+        else:
+            print("  (this desktop doesn't deliver typed keys: shortcuts are sent as key messages"
+                  " through WackGet's accelerators instead)", flush=True)
+            key_message(p.pid, "ctrl+a")
+            how = "key message"
+        check(f"Ctrl+A (Always on top) works ({how})", wait_for(lambda: topmost(p.pid) != before, 5),
               f"topmost {before} -> {topmost(p.pid)}")
     finally:
         c.done()
@@ -471,9 +522,14 @@ def t_paste_html():
     try:
         p = c.start()
         wait_for(lambda: windows(p.pid, "WackGet"), 15)
+        # Queue menu looked at while the clipboard had no links: Add From Clipboard greyed (on
+        # Windows that used to swallow Ctrl+V afterwards)
+        set_clipboard("no links in here")
+        menu_opened(p.pid, 2)
+        time.sleep(0.5)
         set_clipboard(f'<p>Files: <a href="{BASE}/data/2500/0/from%20page.bin">from page</a> and '
                       f'<a href="javascript:alert(1)">bad</a></p>', html=True)
-        sent = KEYS_ARRIVE and keys(p.pid, "WackGet", "ctrl+v")
+        sent = keys(p.pid, "WackGet", "ctrl+v") if KEYS_ARRIVE or not WIN else key_message(p.pid, "ctrl+v")
         got = wait_for(lambda: good_file(c.path("from page.bin"), 2500), 20 if sent else 2)
         if sent or not WIN:
             check("Ctrl+V of a web page (HTML clipboard): link downloaded", got,
@@ -495,7 +551,7 @@ def t_paste_many():
         p = c.start()
         wait_for(lambda: windows(p.pid, "WackGet"), 15)
         set_clipboard("\n".join(f"{BASE}/data/{1000 + i}/0/f{i:03d}.bin" for i in range(n)))
-        if not (KEYS_ARRIVE and keys(p.pid, "WackGet", "ctrl+v")):
+        if not (keys(p.pid, "WackGet", "ctrl+v") if KEYS_ARRIVE or not WIN else key_message(p.pid, "ctrl+v")):
             command(p.pid, "WackGet", 5033)
         ok = wait_for(lambda: os.path.isdir(c.dl) and len(os.listdir(c.dl)) >= n, 120)
         bad = [i for i in range(n) if not good_file(c.path(f"f{i:03d}.bin"), 1000 + i)]
