@@ -40,6 +40,8 @@ enum {
   ID_EDIT_PASTE_ALT, /* Shift+Insert */
   ID_TRAY_SHOWHIDE,
   ID_TRAY_PASTE, /* Add From Clipboard in the Linux tray menu */
+  ID_KEY_FIRST,  /* shortcut keys: ID_KEY_FIRST+n runs key_cmds_[n] (see the constructor) */
+  ID_KEY_LAST= ID_KEY_FIRST+63,
 };
 
 class MainFrame : public wxFrame, public ViewOwner {
@@ -118,6 +120,7 @@ private:
   wxLongLong paste_when_active_= 0; /* Wayland: tray paste waiting for the window to get focus */
   wxRect normal_rect_;
   std::string proxy_pass_;
+  std::vector<int> key_cmds_;
 };
 
 /* Run the dialogs (dialogs.cpp). */

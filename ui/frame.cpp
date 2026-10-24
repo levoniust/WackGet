@@ -290,7 +290,28 @@ MainFrame::MainFrame(): wxFrame(nullptr, wxID_ANY, "WackGet", wxDefaultPosition,
     {wxACCEL_SHIFT, WXK_INSERT, ID_EDIT_PASTE_ALT}, {wxACCEL_NORMAL, WXK_RETURN, ID_ITEM_RUN},
     {wxACCEL_NORMAL, WXK_F1, wxID_HELP},
   };
+  /* Each key gets its own command id, not the menu item's: Windows drops an accelerator whose
+     menu item is greyed, and wxMSW only re-checks greying when a menu opens, so Ctrl+V could stay
+     dead after the clipboard was empty once. The rules are checked when the key is pressed. */
+  for(auto &a : acc) {
+    key_cmds_.push_back(a.GetCommand());
+    a.Set(a.GetFlags(), a.GetKeyCode(), ID_KEY_FIRST+(int)key_cmds_.size()-1);
+  }
   SetAcceleratorTable(wxAcceleratorTable((int)(sizeof(acc)/sizeof(acc[0])), acc));
+  Bind(wxEVT_MENU, [this](wxCommandEvent &e) {
+    size_t n= (size_t)(e.GetId()-ID_KEY_FIRST);
+    if(n>=key_cmds_.size()) {
+      return;
+    }
+    wxUpdateUIEvent u(key_cmds_[n]);
+    on_update_ui(u);
+    if(u.GetSetEnabled() && !u.GetEnabled()) {
+      return; /* greyed right now: the key does nothing, as the menu item would */
+    }
+    wxCommandEvent cmd(wxEVT_MENU, key_cmds_[n]);
+    cmd.SetEventObject(this);
+    on_menu(cmd);
+  }, ID_KEY_FIRST, ID_KEY_LAST);
 
   SetSizer(new wxBoxSizer(wxVERTICAL));
   apply_skin();
@@ -799,6 +820,11 @@ void MainFrame::on_update_ui(wxUpdateUIEvent &e)
 void MainFrame::on_menu(wxCommandEvent &e)
 {
   int id= e.GetId();
+
+  if(id>=ID_KEY_FIRST && id<=ID_KEY_LAST) {
+    e.Skip(); /* a shortcut key: its own handler (constructor) checks the rules first */
+    return;
+  }
 
   /* Shortcuts reach here even when the menu item would be greyed: check the same rules. */
   switch(id) {

@@ -415,7 +415,9 @@ def t_exit_prompt():
         check("closing with an unfinished queue asks to save it", asked)
         if asked:
             if WIN:
-                command(p.pid, "Confirm", 7)  # IDNO: the message box's No button
+                if not keys(p.pid, "Confirm", "n"):
+                    for h in windows(p.pid, "Confirm"):  # wx 3.3 uses a task dialog: click No by id
+                        user32.PostMessageW(h, 0x0466, 7, 0)  # TDM_CLICK_BUTTON, IDNO
             else:
                 keys(p.pid, "Confirm", "alt+n")
         try:
