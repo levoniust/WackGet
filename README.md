@@ -1,22 +1,22 @@
-# WackGet 2 (work in progress)
+# WackGet 2
 
 The classic WackGet download manager, kept looking and working the way it always did, but rebuilt
 so it runs on today's computers: **Windows and Linux, 64-bit Intel/AMD and ARM**.
 
-Status: **all three phases built, not released yet** (branch `modernize/p3-desktop`): the core
-(phase 1), the window with its skins (phase 2) and the Linux desktop pieces and installers
-(phase 3).
+**Download: [latest release](https://github.com/levoniust/WackGet/releases/latest)** (Windows
+setup or zip, Linux .deb).
 
 ## Installing
 
-From the latest [Actions run](https://github.com/levoniust/WackGet/actions) (Artifacts section):
+From the [releases page](https://github.com/levoniust/WackGet/releases/latest) (every
+[Actions run](https://github.com/levoniust/WackGet/actions) also has them, under Artifacts):
 
-- **Windows 10/11:** `WackGet-setup` — one setup for x64 and ARM64 PCs. It installs for your user
+- **Windows 10/11:** `WackGet-2.0.0-setup.exe` — one setup for x64 and ARM64 PCs. It installs for your user
   only (no administrator prompt) into `%LOCALAPPDATA%\Programs\WackGet`, with a Start Menu
   shortcut and, if you leave it ticked, the .wgq association. Not code-signed yet, so SmartScreen
-  asks first ("More info" > "Run anyway"). Or take `WackGet-windows-x64-zip` / `-ARM64-zip` and
+  asks first ("More info" > "Run anyway"). Or take `WackGet-2.0.0-windows-x64.zip` / `-ARM64.zip` and
   run `WackGet.exe` from anywhere.
-- **Debian 13 / Ubuntu 24.04 and newer:** `wackget-deb-amd64` or `-arm64`, then
+- **Debian 13 / Ubuntu 24.04 and newer:** `wackget_2.0.0_amd64.deb` or `_arm64.deb`, then
   `sudo apt install ./wackget_2.0.0_amd64.deb`.
 
 On Linux:

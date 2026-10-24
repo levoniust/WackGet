@@ -11,7 +11,7 @@ import time
 import winreg
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from edge_test import check, failures, focus, user32, wait_for, wintypes  # noqa: E402
+from edge_test import check, failures, user32, wait_for, wintypes  # noqa: E402
 import ctypes  # noqa: E402
 
 DIR = os.path.join(os.environ["LOCALAPPDATA"], "Programs", "WackGet")
@@ -29,7 +29,7 @@ def setup_windows(pid):
         user32.GetWindowThreadProcessId(hwnd, ctypes.byref(p))
         buf = ctypes.create_unicode_buffer(256)
         user32.GetWindowTextW(hwnd, buf, 256)
-        if p.value == pid and user32.IsWindowVisible(hwnd):
+        if p.value == pid and user32.IsWindowVisible(hwnd) and buf.value:
             found.append((hwnd, buf.value))
         return True
     user32.EnumWindows(proc(cb), 0)
@@ -47,14 +47,9 @@ def shot(hwnd, path):
 
 
 def press_enter(hwnd):
-    """Enter on the page (its default button: I Agree / Next / Install / Close); if this desktop
-    won't give us the focus, click that button by its id (IDOK) instead"""
-    if focus(hwnd):
-        user32.keybd_event(0x0D, 0, 0, 0)
-        user32.keybd_event(0x0D, 0, 2, 0)
-    else:
-        print("  (no focus: clicking the button instead)", flush=True)
-        user32.PostMessageW(hwnd, 0x0111, 1, 0)  # WM_COMMAND IDOK
+    """The page's default button (I Agree / Next / Install / Close, id IDOK), clicked by id: CI
+    desktops don't deliver typed keys"""
+    user32.PostMessageW(hwnd, 0x0111, 1, 0)  # WM_COMMAND IDOK
 
 
 def uninstall_entries():
@@ -92,7 +87,7 @@ def main():
     except subprocess.TimeoutExpired:
         p.kill()
         rc = None
-    check("setup pages clicked through (Enter on each)", rc == 0 and len(pages) == 4, f"rc={rc} pages={pages}")
+    check("setup pages clicked through (default button on each)", rc == 0 and len(pages) == 4, f"rc={rc} pages={pages}")
     check("setup window title", all(t.startswith("WackGet") and "Setup" in t for t in pages), str(pages))
     check("installed", os.path.exists(EXE) and os.path.exists(os.path.join(DIR, "uninst.exe")))
     check("listed in Apps & features", uninstall_entries() is not None)
