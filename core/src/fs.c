@@ -81,6 +81,34 @@ static int is_reserved_windows_name(const char *name)
 
 #define WG_NAME_MAX 240
 
+/* Cut a name to at most max bytes, keeping a short extension and cutting on a UTF-8 boundary.
+   Returns the new length. */
+static size_t shorten(char *p, size_t len, size_t max)
+{
+  const char *dot= strrchr(p, '.');
+  size_t ext, keep;
+
+  if(len<=max) {
+    return len;
+  }
+  ext= (dot && len-(size_t)(dot-p)<=16)? len-(size_t)(dot-p): 0;
+  keep= max-ext;
+  while(keep>0 && ((unsigned char)p[keep]&0xc0)==0x80) {
+    keep--;
+  }
+  memmove(p+keep, p+len-ext, ext+1);
+  return keep+ext;
+}
+
+void wg_fs_fit_name(char *name, size_t max)
+{
+  size_t len= shorten(name, strlen(name), max);
+
+  while(len>0 && (name[len-1]=='.' || name[len-1]==' ')) {
+    name[--len]= '\0';
+  }
+}
+
 char *wg_fs_name_from_url(const char *url)
 {
   const char *path, *seg, *q;
@@ -146,19 +174,9 @@ char *wg_fs_name_from_url(const char *url)
   }
   wg_free(raw.p);
 
-  /* Shorten first (one byte spare for the '_' below), keeping a short extension and cutting on a
-     UTF-8 boundary; then trim, so a cut can't leave a trailing space or dot. */
-  if(out.len>WG_NAME_MAX-1) {
-    const char *dot= strrchr(out.p, '.');
-    size_t ext= (dot && out.len-(size_t)(dot-out.p)<=16)? out.len-(size_t)(dot-out.p): 0;
-    size_t keep= WG_NAME_MAX-1-ext;
-
-    while(keep>0 && ((unsigned char)out.p[keep]&0xc0)==0x80) {
-      keep--;
-    }
-    memmove(out.p+keep, out.p+out.len-ext, ext+1);
-    out.len= keep+ext;
-  }
+  /* Shorten first (one byte spare for the '_' below), then trim, so a cut can't leave a trailing
+     space or dot. */
+  out.len= shorten(out.p, out.len, WG_NAME_MAX-1);
 
   /* no leading spaces, no trailing dots or spaces (Windows drops them) */
   i= 0;
@@ -231,9 +249,38 @@ char *wg_wide_to_utf8(const wchar_t *w)
   return s;
 }
 
+/* A path for the wide file calls: past the classic 260-character limit (248 for folders), use the
+   \\?\ form, which has no such limit (it needs a full path with backslashes). */
+static wchar_t *wide_path(const char *path)
+{
+  wchar_t *w= wg_utf8_to_wide(path), *full, *out;
+  DWORD n;
+
+  if(wcslen(w)<248 || wcsncmp(w, L"\\\\?\\", 4)==0) {
+    return w;
+  }
+  n= GetFullPathNameW(w, 0, NULL, NULL);
+  if(n==0) {
+    return w;
+  }
+  full= wg_malloc((size_t)n*sizeof(wchar_t));
+  GetFullPathNameW(w, n, full, NULL);
+  wg_free(w);
+  out= wg_malloc(((size_t)n+8)*sizeof(wchar_t));
+  if(full[0]==L'\\' && full[1]==L'\\') { /* \\server\share -> \\?\UNC\server\share */
+    wcscpy(out, L"\\\\?\\UNC");
+    wcscat(out, full+1);
+  } else {
+    wcscpy(out, L"\\\\?\\");
+    wcscat(out, full);
+  }
+  wg_free(full);
+  return out;
+}
+
 void *wg_fs_fopen(const char *path, const char *mode)
 {
-  wchar_t *wp= wg_utf8_to_wide(path), *wm= wg_utf8_to_wide(mode);
+  wchar_t *wp= wide_path(path), *wm= wg_utf8_to_wide(mode);
   FILE *f= _wfopen(wp, wm);
 
   wg_free(wp);
@@ -243,7 +290,7 @@ void *wg_fs_fopen(const char *path, const char *mode)
 
 int wg_fs_exists(const char *path)
 {
-  wchar_t *wp= wg_utf8_to_wide(path);
+  wchar_t *wp= wide_path(path);
   DWORD a= GetFileAttributesW(wp);
 
   wg_free(wp);
@@ -255,7 +302,7 @@ int wg_fs_exists(const char *path)
 
 int wg_fs_stat(const char *path, int64_t *size, int64_t *mtime)
 {
-  wchar_t *wp= wg_utf8_to_wide(path);
+  wchar_t *wp= wide_path(path);
   WIN32_FILE_ATTRIBUTE_DATA d;
   BOOL ok= GetFileAttributesExW(wp, GetFileExInfoStandard, &d);
 
@@ -276,7 +323,7 @@ int wg_fs_stat(const char *path, int64_t *size, int64_t *mtime)
 
 int wg_fs_set_mtime(const char *path, int64_t mtime)
 {
-  wchar_t *wp= wg_utf8_to_wide(path);
+  wchar_t *wp= wide_path(path);
   HANDLE h= CreateFileW(wp, FILE_WRITE_ATTRIBUTES, FILE_SHARE_READ|FILE_SHARE_WRITE, NULL, OPEN_EXISTING,
                         FILE_ATTRIBUTE_NORMAL, NULL);
   FILETIME ft;
@@ -296,7 +343,7 @@ int wg_fs_set_mtime(const char *path, int64_t mtime)
 
 int wg_fs_remove(const char *path)
 {
-  wchar_t *wp= wg_utf8_to_wide(path);
+  wchar_t *wp= wide_path(path);
   BOOL ok= DeleteFileW(wp);
   DWORD err= GetLastError();
 
@@ -306,7 +353,7 @@ int wg_fs_remove(const char *path)
 
 static int mkdir_one(const char *path)
 {
-  wchar_t *wp= wg_utf8_to_wide(path);
+  wchar_t *wp= wide_path(path);
   BOOL ok= CreateDirectoryW(wp, NULL);
   DWORD err= GetLastError();
 
@@ -316,7 +363,7 @@ static int mkdir_one(const char *path)
 
 int wg_replace_file(const char *tmp, const char *path)
 {
-  wchar_t *wt= wg_utf8_to_wide(tmp), *wp= wg_utf8_to_wide(path);
+  wchar_t *wt= wide_path(tmp), *wp= wide_path(path);
   BOOL ok= MoveFileExW(wt, wp, MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH);
 
   wg_free(wt);

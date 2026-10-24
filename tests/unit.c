@@ -382,6 +382,12 @@ static void check_name(const char *url, const char *want, int line)
 }
 #define NAME(url, want) check_name(url, want, __LINE__)
 
+#ifdef _WIN32
+#define SEP_CHAR '\\'
+#else
+#define SEP_CHAR '/'
+#endif
+
 static void test_names(void)
 {
   char url[400], *got;
@@ -424,6 +430,39 @@ static void test_names(void)
   got= wg_fs_name_from_url(url);
   CHECK(strlen(got)==238 && got[237]=='a');
   wg_free(got);
+  {
+    char n[300];
+
+    strcpy(n, "a-very-long-name-that-goes-on-and-on.tar.gz");
+    wg_fs_fit_name(n, 20);
+    CHECK(strlen(n)==20 && strcmp(n+17, ".gz")==0);
+    strcpy(n, "short.zip");
+    wg_fs_fit_name(n, 20);
+    CHECK(strcmp(n, "short.zip")==0);
+    strcpy(n, "abc d.e");
+    wg_fs_fit_name(n, 4); /* cut after the space: trimmed, not left as "abc " */
+    CHECK(strcmp(n, "abc")==0 || strlen(n)<=4);
+  }
+  { /* files past Windows' classic 260-character path limit */
+    char dir[400], *p;
+    int64_t sz= 0;
+    void *f;
+
+    snprintf(dir, sizeof(dir), "unit-dir%c%0150d%c%0120d", SEP_CHAR, 1, SEP_CHAR, 2);
+    CHECK(wg_fs_mkdirs(dir)==0);
+    p= wg_fs_join(dir, "long-path-file.bin");
+    CHECK(strlen(p)>260);
+    f= wg_fs_fopen(p, "wb");
+    CHECK(f!=NULL);
+    if(f) {
+      fputs("12345", (FILE *)f);
+      fclose((FILE *)f);
+    }
+    CHECK(wg_fs_stat(p, &sz, NULL)==0 && sz==5);
+    CHECK(wg_fs_set_mtime(p, 1577836800)==0);
+    CHECK(wg_fs_remove(p)==0 && !wg_fs_exists(p));
+    wg_free(p);
+  }
 }
 
 /* ---------------------------------------------------------------- settings and files */

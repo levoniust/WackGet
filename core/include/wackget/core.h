@@ -118,11 +118,14 @@ int wg_queue_save(const char *path, const wg_queue_item *items, size_t n);
 
 /* ------------------------------------------------------------------ files and folders */
 
-/* The local file name for a URL, like wget: the last path segment, percent-decoded, made safe on
-   every OS (no separators, reserved names or control characters). "index.html" when empty. */
+/* The local file name for a URL, like the Windows wget of 1.2.x: the last path segment plus
+   "@query" if there is one, percent-decoded, made safe on every OS (no separators, reserved
+   names or control characters). "index.html" when empty. */
 char *wg_fs_name_from_url(const char *url);
 /* dir + separator + name (new string). */
 char *wg_fs_join(const char *dir, const char *name);
+/* Shorten a file name in place to at most max bytes, keeping its extension. */
+void wg_fs_fit_name(char *name, size_t max);
 int wg_fs_exists(const char *path);
 /* Size and modification time (Unix seconds) of a file; -1 if it doesn't exist. */
 int wg_fs_stat(const char *path, int64_t *size, int64_t *mtime);

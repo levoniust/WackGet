@@ -506,6 +506,13 @@ wg_dl *wg_dl_start(const wg_dl_opts *o)
   dl->retry_wait_ms= (o->retry_wait_ms>0)? o->retry_wait_ms: 1000;
 
   name= wg_fs_name_from_url(dl->url);
+#ifdef _WIN32
+  /* Keep the whole path under Windows' classic 260 characters where the folder allows, so
+     Explorer and older programs can open the file (UTF-8 bytes >= UTF-16 units: safe count). */
+  if(strlen(dl->dir)+1+strlen(name)>259 && strlen(dl->dir)+1+40<=259) {
+    wg_fs_fit_name(name, 259-strlen(dl->dir)-1);
+  }
+#endif
   path= wg_fs_join(dl->dir, name);
   snprintf(dl->info.name, sizeof(dl->info.name), "%s", name);
   snprintf(dl->info.path, sizeof(dl->info.path), "%s", path);

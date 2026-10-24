@@ -269,6 +269,24 @@ def t_same_name():
         c.done()
 
 
+def t_long_link():
+    """A signed download link with a long query: on Windows the name is shortened so the whole
+    path stays under 260 characters (Explorer can open it)"""
+    c = Case("longlink")
+    sig = "a1b2c3d4" * 40
+    try:
+        c.start(f"{BASE}/data/2000/0/report-final.pdf?X-Amz-Expires=600&X-Amz-Signature={sig}")
+        ok = wait_for(lambda: os.path.isdir(c.dl) and len(os.listdir(c.dl)) == 1 and
+                      good_file(c.path(os.listdir(c.dl)[0]), 2000), 20)
+        names = os.listdir(c.dl) if os.path.isdir(c.dl) else []
+        check("long signed link downloaded", ok and names[0].startswith("report-final.pdf@X-Amz-Expires=600"), str(names))
+        if WIN and names:
+            full = len(c.path(names[0]))
+            check("Windows: whole path under 260 characters", full <= 259, f"{full}")
+    finally:
+        c.done()
+
+
 def t_crash_resume():
     c = Case("resume")
     size = 30_000_000
@@ -411,7 +429,7 @@ def main():
     if not WIN:
         wm = subprocess.Popen(["openbox"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         time.sleep(1)
-    tests = [t_unicode, t_same_name, t_crash_resume, t_paste_html, t_paste_many, t_second_instance,
+    tests = [t_unicode, t_same_name, t_long_link, t_crash_resume, t_paste_html, t_paste_many, t_second_instance,
              t_exit_prompt]
     if WIN:
         tests.append(t_tray_close)  # Linux tray: tests/linux_desktop.py
