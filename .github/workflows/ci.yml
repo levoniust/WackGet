@@ -20,11 +20,13 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Install libcurl, wxWidgets, libsecret, Xvfb
+      - name: Install libcurl, wxWidgets, GTK, libsecret, Xvfb and the desktop test tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libcurl4-openssl-dev libwxgtk3.2-dev libsecret-1-dev \
-            pkg-config xvfb imagemagick
+          sudo apt-get install -y --no-install-recommends libcurl4-openssl-dev libwxgtk3.2-dev libgtk-3-dev \
+            libsecret-1-dev pkg-config xvfb xauth imagemagick libayatana-appindicator3-1 openbox xdotool \
+            xdg-utils libfile-mimeinfo-perl desktop-file-utils shared-mime-info python3-gi gir1.2-glib-2.0 \
+            dbus-daemon
       - name: Build (Release, warnings are errors)
         run: |
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DWG_WERROR=ON
@@ -33,6 +35,8 @@ jobs:
         run: ctest --test-dir build --output-on-failure
       - name: Window test (every skin, real downloads from a local server, screenshots)
         run: xvfb-run -a -s "-screen 0 1280x800x24" python3 tests/gui_demo.py build/wackget shots
+      - name: Desktop test (tray icon over StatusNotifier, X11 hot key, --toggle, .wgq association)
+        run: dbus-run-session -- xvfb-run -a -s "-screen 0 1280x800x24" python3 tests/linux_desktop.py build/wackget
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: screenshots-linux-${{ matrix.arch }}
@@ -44,8 +48,14 @@ jobs:
           ctest --test-dir build-asan --output-on-failure
 
   debian:
-    name: Debian 13 (trixie)
-    runs-on: ubuntu-24.04
+    name: Debian 13 .deb ${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: amd64, os: ubuntu-24.04 }
+          - { arch: arm64, os: ubuntu-24.04-arm }
+    runs-on: ${{ matrix.os }}
     container: debian:trixie
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -53,12 +63,57 @@ jobs:
         run: |
           apt-get update
           apt-get install -y --no-install-recommends build-essential cmake libcurl4-openssl-dev python3 \
-            ca-certificates libwxgtk3.2-dev libsecret-1-dev pkg-config
+            ca-certificates libwxgtk3.2-dev libgtk-3-dev libsecret-1-dev pkg-config dpkg-dev file lintian \
+            desktop-file-utils appstream
       - name: Build + test
         run: |
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DWG_WERROR=ON
           cmake --build build -j4
           ctest --test-dir build --output-on-failure
+      - name: Package (.deb) and check it
+        run: |
+          desktop-file-validate linux/io.github.levoniust.WackGet.desktop
+          appstreamcli validate --no-net linux/io.github.levoniust.WackGet.metainfo.xml
+          cd build && cpack
+          dpkg-deb -I wackget_*.deb
+          lintian --fail-on error,warning wackget_*.deb
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: wackget-deb-${{ matrix.arch }}
+          path: build/wackget_*.deb
+
+  debian-install:
+    name: Install the .deb on a clean Debian 13 ${{ matrix.arch }}
+    needs: debian
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: amd64, os: ubuntu-24.04 }
+          - { arch: arm64, os: ubuntu-24.04-arm }
+    runs-on: ${{ matrix.os }}
+    container: debian:trixie
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: wackget-deb-${{ matrix.arch }}
+          path: deb
+      - name: Install it (with what apt recommends) plus the test tools
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends python3 python3-gi gir1.2-glib-2.0 dbus-daemon xvfb xauth \
+            openbox xdotool imagemagick fonts-dejavu-core desktop-file-utils shared-mime-info libfile-mimeinfo-perl
+          apt-get install -y ./deb/wackget_*.deb
+          dpkg -L wackget
+          test -x /usr/bin/wackget
+          touch /tmp/x.wgq && test "$(xdg-mime query filetype /tmp/x.wgq)" = application/x-wackget-queue
+      - name: Window test with the installed WackGet
+        run: xvfb-run -a -s "-screen 0 1280x800x24" python3 tests/gui_demo.py /usr/bin/wackget shots classic win11
+      - name: Desktop test with the installed WackGet
+        run: dbus-run-session -- xvfb-run -a -s "-screen 0 1280x800x24" python3 tests/linux_desktop.py /usr/bin/wackget
+      - name: Remove it again
+        run: apt-get remove -y wackget && test ! -e /usr/bin/wackget
 
   windows:
     name: Windows ${{ matrix.arch }}
@@ -91,12 +146,91 @@ jobs:
         with:
           name: screenshots-windows-${{ matrix.arch }}
           path: shots/
+      - name: Portable zip (WackGet.exe, help, licence)
+        run: |
+          cmake --install build --config Release --prefix pkg
+          Compress-Archive -Path pkg\* -DestinationPath WackGet-windows-${{ matrix.arch }}.zip
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: WackGet-windows-${{ matrix.arch }}
           path: |
             build/Release/WackGet.exe
             build/Release/wgdl.exe
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: WackGet-windows-${{ matrix.arch }}-zip
+          path: WackGet-windows-${{ matrix.arch }}.zip
+
+  installer:
+    name: Windows installer (x64 + ARM64 in one)
+    needs: windows
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: WackGet-windows-x64
+          path: bin/x64
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: WackGet-windows-ARM64
+          path: bin/arm64
+      - name: Build it with NSIS (as 1.2.x was)
+        run: |
+          sudo apt-get update && sudo apt-get install -y --no-install-recommends nsis
+          version=$(sed -n 's/^project(WackGet VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt)
+          cd windows
+          makensis -WX -DVERSION=$version -DX64=$PWD/../bin/x64 -DARM64=$PWD/../bin/arm64 \
+            -DOUTFILE=$PWD/../WackGet-$version-setup.exe installer.nsi
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: WackGet-setup
+          path: WackGet-*-setup.exe
+
+  installer-test:
+    name: Install + uninstall on Windows ${{ matrix.arch }}
+    needs: installer
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: x64, os: windows-latest, machine: '0x8664' }
+          - { arch: ARM64, os: windows-11-arm, machine: '0xAA64' }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.13'
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: WackGet-setup
+      - name: Silent install (per user, default choices)
+        run: |
+          $setup = (Get-Item WackGet-*-setup.exe).FullName
+          Start-Process $setup -ArgumentList '/S' -Wait
+          $dir = "$env:LOCALAPPDATA\Programs\WackGet"
+          foreach ($f in 'WackGet.exe', 'WackGet.html', 'LICENSE.txt', 'uninst.exe') {
+            if (-not (Test-Path "$dir\$f")) { throw "missing $f" }
+          }
+          # the right build for this PC: PE machine type
+          $b = [IO.File]::ReadAllBytes("$dir\WackGet.exe"); $pe = [BitConverter]::ToInt32($b, 0x3C)
+          $m = '0x{0:X4}' -f [BitConverter]::ToUInt16($b, $pe + 4)
+          if ($m -ne '${{ matrix.machine }}') { throw "installed machine type $m" }
+          if ((Get-ItemProperty 'HKCU:\Software\Classes\.wgq').'(default)' -ne 'WackGet.Queue') { throw 'no .wgq association' }
+          if (-not (Test-Path "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\WackGet.lnk")) { throw 'no Start Menu shortcut' }
+          Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\WackGet' | Format-List
+      - name: Window test with the installed WackGet
+        run: python tests/gui_demo.py "$env:LOCALAPPDATA\Programs\WackGet\WackGet.exe" shots classic
+      - name: Silent uninstall
+        run: |
+          $dir = "$env:LOCALAPPDATA\Programs\WackGet"
+          Start-Process "$dir\uninst.exe" -ArgumentList '/S' -Wait
+          for ($i = 0; $i -lt 30 -and (Test-Path $dir); $i++) { Start-Sleep 1 } # it finishes from a temp copy
+          if (Test-Path $dir) { Get-ChildItem $dir; throw 'install folder left behind' }
+          if (Test-Path 'HKCU:\Software\Classes\.wgq') { throw '.wgq association left behind' }
+          if (Test-Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\WackGet') { throw 'uninstall entry left behind' }
+          if (Test-Path "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\WackGet.lnk") { throw 'shortcut left behind' }
 
   fuzz:
     name: Fuzz (libFuzzer, 60 s per target)

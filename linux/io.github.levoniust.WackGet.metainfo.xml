@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.levoniust.WackGet</id>
+  <metadata_license>FSFAP</metadata_license>
+  <project_license>GPL-2.0-only</project_license>
+  <name>WackGet</name>
+  <summary>Download manager: paste or drop links and let it fetch them</summary>
+  <developer id="io.github.levoniust">
+    <name>WackGet contributors</name>
+  </developer>
+  <description>
+    <p>
+      WackGet is the classic 2002 download manager, rebuilt for today's computers and kept looking
+      and working the way it always did. Copy links from anywhere, paste or drop them into the
+      queue, and WackGet downloads them a few at a time, resuming partial files and retrying
+      broken connections.
+    </p>
+    <ul>
+      <li>Paste or drag and drop links, web pages and .wgq queue files; no browser add-on</li>
+      <li>Pause, force, requeue and reorder downloads; save and load queues</li>
+      <li>Resumes partial files and skips files that are already up to date</li>
+      <li>Tray icon showing download status, and a hot key to show or hide the window</li>
+      <li>Classic look, or the Windows 11 and Material Design 1 skins, light or dark</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">io.github.levoniust.WackGet.desktop</launchable>
+  <url type="homepage">https://github.com/levoniust/WackGet</url>
+  <url type="bugtracker">https://github.com/levoniust/WackGet/issues</url>
+  <provides>
+    <binary>wackget</binary>
+    <mediatype>application/x-wackget-queue</mediatype>
+  </provides>
+  <categories>
+    <category>Network</category>
+    <category>FileTransfer</category>
+  </categories>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="2.0.0" date="2026-10-23">
+      <description>
+        <p>Rebuilt for Windows and Linux on x86-64 and ARM64, with a libcurl download engine.</p>
+      </description>
+    </release>
+  </releases>
+</component>

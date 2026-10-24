@@ -30,7 +30,7 @@ const size_t ipc_max= 4*1024*1024; /* a long list of pasted links, but nothing s
 
 MainFrame *main_frame;
 
-/* Arguments arrive as "cmd\nARG\nARG...": cmd is "open" (add/load) or "show". */
+/* Arguments arrive as "cmd\nARG\nARG...": cmd is "open" (add/load), "show" or "toggle". */
 class Conn : public wxConnection {
 public:
   bool OnExec(const wxString &, const wxString &data) override
@@ -44,8 +44,11 @@ public:
     for(size_t i= 1; i<parts.size() && args.size()<100000; i++) {
       args.push_back(parts[i].utf8_string());
     }
-    main_frame->CallAfter([args] {
-      if(args.empty()) {
+    bool toggle= parts[0]=="toggle";
+    main_frame->CallAfter([args, toggle] {
+      if(toggle) {
+        main_frame->toggle();
+      } else if(args.empty()) {
         main_frame->show_from_outside();
       } else {
         main_frame->process_args(args, false); /* asks before replacing a non-empty queue */
@@ -94,6 +97,7 @@ bool App::OnInit()
 {
   std::vector<std::string> args;
   wxString config, skin_override;
+  bool toggle= false;
 
   for(int i= 1; i<argc; i++) {
     wxString a= argv[i];
@@ -102,6 +106,10 @@ bool App::OnInit()
       continue;
     }
     if(a.StartsWith("--skin=", &skin_override)) {
+      continue;
+    }
+    if(a=="--toggle") { /* for a desktop keyboard shortcut: show or hide the running WackGet */
+      toggle= true;
       continue;
     }
     args.push_back(a.utf8_string());
@@ -126,7 +134,7 @@ bool App::OnInit()
     std::unique_ptr<wxConnectionBase> conn(client.MakeConnection("localhost", service_name(instance), ipc_topic));
 
     if(conn) {
-      wxString msg= args.empty()? "show": "open";
+      wxString msg= toggle? "toggle": args.empty()? "show": "open";
       for(const auto &a : args) {
         msg+= "\n"+wxString::FromUTF8(a);
       }
@@ -150,6 +158,9 @@ bool App::OnInit()
   }
 #endif
 
+#ifdef __WXGTK__
+  platform_init_app();
+#endif
   if(wg_global_init()!=WG_OK) {
     wxMessageBox("Could not start the download engine (libcurl).", "WackGet", wxOK|wxICON_ERROR);
     return false;

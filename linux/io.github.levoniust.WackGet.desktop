@@ -1,0 +1,18 @@
+[Desktop Entry]
+Type=Application
+Name=WackGet
+GenericName=Download Manager
+Comment=Paste or drop links and let it fetch them
+Exec=wackget %F
+Icon=io.github.levoniust.WackGet
+Terminal=false
+Categories=Network;FileTransfer;
+Keywords=download;wget;queue;
+MimeType=application/x-wackget-queue;
+StartupWMClass=WackGet
+SingleMainWindow=true
+Actions=Toggle;
+
+[Desktop Action Toggle]
+Name=Show or Hide WackGet
+Exec=wackget --toggle

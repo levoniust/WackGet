@@ -17,7 +17,12 @@
 #include "skin.h"
 #include "views.h"
 
-class Tray;
+/* A tray icon: wxTaskBarIcon, or on Linux a StatusNotifierItem (linux_desktop.cpp) */
+class AppTray {
+public:
+  virtual ~AppTray()= default;
+  virtual void set(bool busy, const wxString &tip, bool shown)= 0;
+};
 class SkinBar;
 
 enum {
@@ -33,6 +38,7 @@ enum {
   ID_VIEW_ALWAYSONTOP,
   ID_EDIT_COPY_ALT,  /* Ctrl+Insert */
   ID_EDIT_PASTE_ALT, /* Shift+Insert */
+  ID_TRAY_SHOWHIDE,
 };
 
 class MainFrame : public wxFrame, public ViewOwner {
@@ -44,7 +50,10 @@ public:
      (original process_command_line()). */
   void process_args(const std::vector<std::string> &args, bool always_append);
   void show_from_outside(); /* a second WackGet was started without arguments */
-  void show_hide();         /* tray click / hot key (original do_showhide()) */
+  void show_hide();         /* tray click (original do_showhide()) */
+  /* Hot key, "wackget --toggle": hide when in front, else bring to front. front: 1/0 if the
+     caller knows, -1 to go by the focus. */
+  void toggle(int front= -1);
   void apply_prefs();       /* after Preferences OK/Apply */
   void exit_app();          /* File > Exit: may ask to save the queue */
   void show_initially();
@@ -52,6 +61,7 @@ public:
   const wxIconBundle &icons() const { return icons_; }
   wxBitmapBundle idle_bundle() const;
   wxString hotkey_text() const { return hotkey_text_; }
+  void set_hotkey_text(const wxString &t) { hotkey_text_= t; } /* the desktop answered (Linux portal) */
 
   /* ViewOwner */
   void on_view_context_menu(bool on_item, const wxPoint &screen_pos) override;
@@ -83,6 +93,8 @@ private:
   bool save_queue();
   bool load_queues(const std::vector<std::string> &paths, bool always_append);
   void register_hotkey();
+  void make_tray();
+  void remove_tray();
   void save_window_state();
   void remember_normal_rect();
 
@@ -94,13 +106,12 @@ private:
   Queue q_;
   QueueView *view_= nullptr;
   SkinBar *bar_= nullptr;
-  Tray *tray_= nullptr;
+  AppTray *tray_= nullptr;
   wxMenuBar *menubar_= nullptr;
   wxTimer timer_;
   Skin skin_;
   wxIconBundle icons_;
-  wxIcon idle_icon_, busy_icon_;
-  bool tray_busy_= false;
+  wxIcon busy_icon_;
   wxString idle_msg_, hotkey_text_;
   bool menu_open_= false, update_pending_= false, exiting_= false;
   wxRect normal_rect_;
@@ -113,11 +124,20 @@ void run_about_dialog(MainFrame *parent);
 void run_prefs_dialog(MainFrame *parent);
 void open_help();
 
+/* The program's icons, from the embedded original .ico files (frame.cpp). */
+wxIconBundle wackget_icons();
+wxIcon wackget_busy_icon();
+
 /* Platform bits (platform.cpp). */
 bool platform_assoc_get();
 bool platform_assoc_set(bool on);
 bool platform_assoc_supported();
 void platform_set_taskbar_button(wxFrame *f, bool show);
 void platform_dark_title_bar(wxFrame *f, bool dark);
+#ifdef __WXGTK__
+void platform_init_app();                   /* before the first window */
+AppTray *platform_make_tray(MainFrame *f);  /* nullptr: no StatusNotifier host here */
+wxString platform_hotkey_start(MainFrame *f, bool on); /* the key's text, empty if none */
+#endif
 
 #endif

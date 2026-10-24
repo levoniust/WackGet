@@ -1,0 +1,7 @@
+wackget (2.0.0) unstable; urgency=medium
+
+  * WackGet rebuilt for Windows and Linux on x86-64 and ARM64: libcurl download
+    engine, wxWidgets window with the original menus and dialogs, Windows 11 and
+    Material Design 1 skins, tray icon, hot key and .wgq association on Linux.
+
+ -- levoniust <33678948+levoniust@users.noreply.github.com>  Fri, 23 Oct 2026 21:30:00 +0000

@@ -3,11 +3,37 @@
 The classic WackGet download manager, kept looking and working the way it always did, but rebuilt
 so it runs on today's computers: **Windows and Linux, 64-bit Intel/AMD and ARM**.
 
-Status: **phase 1 of 3 — the core** (branch `modernize/p1-core`). The window comes in phase 2
-(Windows) and phase 3 (Linux), built with wxWidgets so it uses the real Windows controls the
-original used.
+Status: **all three phases built, not released yet** (branch `modernize/p3-desktop`): the core
+(phase 1), the window with its skins (phase 2) and the Linux desktop pieces and installers
+(phase 3).
 
-What phase 1 contains (`core/`):
+## Installing
+
+From the latest [Actions run](https://github.com/levoniust/WackGet/actions) (Artifacts section):
+
+- **Windows 10/11:** `WackGet-setup` — one setup for x64 and ARM64 PCs. It installs for your user
+  only (no administrator prompt) into `%LOCALAPPDATA%\Programs\WackGet`, with a Start Menu
+  shortcut and, if you leave it ticked, the .wgq association. Not code-signed yet, so SmartScreen
+  asks first ("More info" > "Run anyway"). Or take `WackGet-windows-x64-zip` / `-ARM64-zip` and
+  run `WackGet.exe` from anywhere.
+- **Debian 13 / Ubuntu 24.04 and newer:** `wackget-deb-amd64` or `-arm64`, then
+  `sudo apt install ./wackget_2.0.0_amd64.deb`.
+
+On Linux:
+
+- **Tray icon:** shows on KDE Plasma, Xfce, Cinnamon, MATE and others. Stock GNOME has no tray:
+  install the "AppIndicator and KStatusNotifierItem Support" extension
+  (`gnome-shell-extension-appindicator` on Debian; Ubuntu has it already). Without a tray,
+  closing the window quits WackGet instead of hiding it. The tray menu has Show/Hide, since
+  panels open the menu on a left click.
+- **Hot key** (Preferences > Integration): Ctrl+Alt+W on X11. On Wayland, WackGet asks the
+  desktop through the shortcuts portal (GNOME 48+, Plasma 6), which asks you once and may let you
+  pick another key. Anywhere else, make a keyboard shortcut in your desktop settings that runs
+  `wackget --toggle`.
+- **.wgq files:** the .deb sets up the file type; Preferences > Integration makes WackGet the app
+  that opens them (and for a copy you built yourself, adds it to your app menu).
+
+## Phase 1: the core
 
 - **Download engine:** libcurl on a thread per download, replacing the patched wget 1.10.2
   (2005). Same behaviour: keeps retrying, resumes partial files, skips files that are already up
@@ -31,10 +57,14 @@ current folder.
 
 Linux (Debian/Ubuntu):
 
-    sudo apt install build-essential cmake libcurl4-openssl-dev python3
+    sudo apt install build-essential cmake libcurl4-openssl-dev python3 libwxgtk3.2-dev libgtk-3-dev \
+      libsecret-1-dev pkg-config
     cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
     cmake --build build -j
     ctest --test-dir build --output-on-failure
+    cd build && cpack    # wackget_<version>_<arch>.deb
+
+The tray icon uses `libayatana-appindicator3-1` when it is installed (no build dependency).
 
 Windows (Visual Studio 2022 or Build Tools, x64 or ARM64; libcurl is built automatically):
 
@@ -42,8 +72,13 @@ Windows (Visual Studio 2022 or Build Tools, x64 or ARM64; libcurl is built autom
     cmake --build build --config Release
     ctest --test-dir build -C Release --output-on-failure
 
+The Windows setup is made with NSIS (`windows/installer.nsi`, also from Linux with `makensis`).
+
 Every push is built and tested on GitHub Actions: Windows x64 + ARM64, Linux x86_64 + aarch64,
-Debian 13, AddressSanitizer/UBSan, and libFuzzer on the queue and paste parsers.
+Debian 13, AddressSanitizer/UBSan, and libFuzzer on the queue and paste parsers. The window is
+tested in every skin against a local download server, the Linux tray/hot key/association against
+a stand-in panel, the .deb on a clean Debian 13, and the setup by installing and uninstalling it
+on Windows x64 and ARM64.
 
 The 1.2.4 sources are still in `WackGet/` and `WGDLL/` for reference until the new window
 replaces them.

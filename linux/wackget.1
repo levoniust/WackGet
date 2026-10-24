@@ -1,0 +1,37 @@
+.TH WACKGET 1 "October 2026" "WackGet 2.0.0" "User Commands"
+.SH NAME
+wackget \- download manager: paste or drop links and let it fetch them
+.SH SYNOPSIS
+.B wackget
+[\fB\-\-toggle\fR]
+[\fB\-\-config=\fIFILE\fR]
+[\fB\-\-skin=\fINAME\fR]
+[\fIURL\fR|\fIQUEUE.wgq\fR]...
+.SH DESCRIPTION
+WackGet keeps a queue of downloads and fetches a few at a time, resuming partial files and
+retrying broken connections. Add links by pasting (Ctrl+V), dragging them onto the window,
+opening a .wgq queue file, or naming them on the command line.
+.PP
+Only one WackGet runs per user: starting it again hands the URLs and queue files to the one
+that is already running, or brings its window to the front.
+.SH OPTIONS
+.TP
+.B \-\-toggle
+Show the running WackGet, or hide it if it is the window in front. Meant for a keyboard shortcut
+made in the desktop's settings.
+.TP
+.BI \-\-config= FILE
+Use \fIFILE\fR for the settings instead of
+.IR ~/.config/wackget/wackget.ini .
+.TP
+.BI \-\-skin= NAME
+Start with the \fBclassic\fR, \fBwin11\fR or \fBmaterial1\fR look (not saved).
+.SH FILES
+.TP
+.I ~/.config/wackget/
+Settings and the download log. The proxy password is kept in the desktop's keyring.
+.SH SEE ALSO
+.BR wget (1),
+.BR curl (1)
+.PP
+https://github.com/levoniust/WackGet

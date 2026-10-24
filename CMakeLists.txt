@@ -70,16 +70,72 @@ if(WG_GUI AND NOT WG_FUZZ)
     set_target_properties(wackget PROPERTIES OUTPUT_NAME WackGet)
     target_link_options(wackget PRIVATE /MANIFEST:NO) # the manifest comes from wx.rc
   else()
-    find_package(PkgConfig)
-    if(PKG_CONFIG_FOUND)
-      pkg_check_modules(LIBSECRET IMPORTED_TARGET libsecret-1)
-    endif()
+    # The Linux desktop (linux_desktop.cpp): GTK 3 and X11 directly for the tray menu and the hot
+    # key; libayatana-appindicator3 is loaded at run time, so it is not needed to build.
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(GTK3 REQUIRED IMPORTED_TARGET gtk+-3.0 x11)
+    target_sources(wackget PRIVATE ui/linux_desktop.cpp)
+    target_link_libraries(wackget PRIVATE PkgConfig::GTK3 ${CMAKE_DL_LIBS})
+    pkg_check_modules(LIBSECRET IMPORTED_TARGET libsecret-1)
     if(LIBSECRET_FOUND)
       target_compile_definitions(wackget PRIVATE WG_HAVE_LIBSECRET)
       target_link_libraries(wackget PRIVATE PkgConfig::LIBSECRET)
     endif()
   endif()
   wg_harden(wackget)
+
+  # ---------------------------------------------------------------- install + packages
+  if(WIN32)
+    install(TARGETS wackget RUNTIME DESTINATION .)
+    install(FILES WackGet.html LICENSE.txt DESTINATION .)
+  else()
+    include(GNUInstallDirs)
+    set(CMAKE_INSTALL_DEFAULT_DIRECTORY_PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ
+        GROUP_EXECUTE WORLD_READ WORLD_EXECUTE) # 0755 whatever the umask
+    set(id io.github.levoniust.WackGet)
+    set(docdir ${CMAKE_INSTALL_DATADIR}/doc/wackget) # Help looks in ../share/doc/wackget
+    install(TARGETS wackget RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+    install(FILES linux/${id}.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
+    install(FILES linux/${id}.xml DESTINATION ${CMAKE_INSTALL_DATADIR}/mime/packages)
+    install(FILES linux/${id}.metainfo.xml DESTINATION ${CMAKE_INSTALL_DATADIR}/metainfo)
+    foreach(size 16 32 48 96 192)
+      install(FILES linux/icons/wackget-${size}.png RENAME ${id}.png
+              DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/${size}x${size}/apps)
+    endforeach()
+    install(FILES WackGet.html linux/copyright DESTINATION ${docdir})
+    find_program(GZIP gzip)
+    if(GZIP)
+      foreach(f wackget.1 changelog)
+        add_custom_command(OUTPUT ${f}.gz
+                           COMMAND ${GZIP} -9nc ${CMAKE_CURRENT_SOURCE_DIR}/linux/${f} > ${f}.gz
+                           DEPENDS linux/${f})
+      endforeach()
+      add_custom_target(linux_docs ALL DEPENDS wackget.1.gz changelog.gz)
+      install(FILES ${CMAKE_CURRENT_BINARY_DIR}/wackget.1.gz DESTINATION ${CMAKE_INSTALL_MANDIR}/man1)
+      install(FILES ${CMAKE_CURRENT_BINARY_DIR}/changelog.gz DESTINATION ${docdir})
+    endif()
+
+    # cpack -G DEB: a .deb for Debian 13 and Ubuntu 24.04+, dependencies worked out by dpkg-shlibdeps
+    set(CPACK_GENERATOR DEB)
+    set(CPACK_PACKAGE_NAME wackget)
+    set(CPACK_PACKAGE_VENDOR "WackGet contributors")
+    set(CPACK_PACKAGE_CONTACT "levoniust <33678948+levoniust@users.noreply.github.com>")
+    set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "download manager: paste or drop links and let it fetch them")
+    set(CPACK_PACKAGE_DESCRIPTION "WackGet is the classic 2002 download manager, rebuilt for today's
+computers and kept looking and working the way it always did. Paste or drop
+links into the queue and it downloads them a few at a time, resuming partial
+files and retrying broken connections.")
+    set(CPACK_DEBIAN_PACKAGE_HOMEPAGE "https://github.com/levoniust/WackGet")
+    set(CPACK_DEBIAN_PACKAGE_SECTION net)
+    set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
+    # the tray icon on Plasma/GNOME (loaded when present), and the .wgq association
+    set(CPACK_DEBIAN_PACKAGE_RECOMMENDS "libayatana-appindicator3-1, xdg-utils")
+    set(CPACK_DEBIAN_FILE_NAME DEB-DEFAULT)
+    set(CPACK_DEBIAN_PACKAGE_CONTROL_STRICT_PERMISSION ON)
+    set(CPACK_STRIP_FILES ON)
+    set(CPACK_PACKAGING_INSTALL_PREFIX /usr)
+    include(CPack)
+  endif()
 endif()
 
 # ---------------------------------------------------------------- tests

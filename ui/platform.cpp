@@ -89,22 +89,7 @@ void platform_dark_title_bar(wxFrame *f, bool dark)
   DwmSetWindowAttribute((HWND)f->GetHWND(), 20, &on, sizeof(on));
 }
 
-#else
-
-bool platform_assoc_supported()
-{
-  return false; /* Linux phase: shared-mime-info + .desktop file */
-}
-
-bool platform_assoc_get()
-{
-  return false;
-}
-
-bool platform_assoc_set(bool)
-{
-  return false;
-}
+#else /* the association, tray and hot key for Linux are in linux_desktop.cpp */
 
 void platform_set_taskbar_button(wxFrame *f, bool show)
 {

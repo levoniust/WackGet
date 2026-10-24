@@ -92,6 +92,39 @@ private:
   MainFrame *f_;
 };
 
+/* wxTaskBarIcon: Windows, and X11 desktops with an XEmbed tray */
+class WxTray : public AppTray {
+public:
+  WxTray(MainFrame *f, const wxIcon &busy): tray_(new Tray(f)), idle_(f->idle_bundle()), busy_(busy)
+  {
+    tray_->SetIcon(idle_, "WackGet");
+  }
+  ~WxTray() override
+  {
+    tray_->RemoveIcon();
+    tray_->Destroy();
+  }
+  void set(bool busy, const wxString &tip, bool) override
+  {
+    if(busy!=busy_on_ || tip!=tip_) {
+      busy_on_= busy;
+      tip_= tip;
+      if(busy && busy_.IsOk()) {
+        tray_->SetIcon(busy_, tip);
+      } else {
+        tray_->SetIcon(idle_, tip);
+      }
+    }
+  }
+
+private:
+  Tray *tray_;
+  wxBitmapBundle idle_;
+  wxIcon busy_;
+  bool busy_on_= false;
+  wxString tip_= "WackGet";
+};
+
 /* ------------------------------------------------------------------ drag and drop (droptarget.c) */
 
 class DropTarget : public wxDropTarget {
@@ -174,6 +207,31 @@ static wxIcon load_icon(const unsigned char *data, size_t len, int index)
   return icon;
 }
 
+wxIconBundle wackget_icons()
+{
+  wxIconBundle icons;
+
+  if(!wxImage::FindHandler(wxBITMAP_TYPE_ICO)) {
+    wxImage::AddHandler(new wxICOHandler);
+  }
+  for(int i= 0; i<3; i++) {
+    wxIcon ic= load_icon(wackget_ico, sizeof(wackget_ico), i);
+
+    if(ic.IsOk()) {
+      icons.AddIcon(ic);
+    }
+  }
+  return icons;
+}
+
+wxIcon wackget_busy_icon()
+{
+  if(!wxImage::FindHandler(wxBITMAP_TYPE_ICO)) {
+    wxImage::AddHandler(new wxICOHandler);
+  }
+  return load_icon(busy_ico, sizeof(busy_ico), 0);
+}
+
 /* ------------------------------------------------------------------ frame */
 
 wxBitmapBundle MainFrame::idle_bundle() const
@@ -197,19 +255,9 @@ static long frame_style()
 
 MainFrame::MainFrame(): wxFrame(nullptr, wxID_ANY, "WackGet", wxDefaultPosition, wxDefaultSize, frame_style())
 {
-  if(!wxImage::FindHandler(wxBITMAP_TYPE_ICO)) {
-    wxImage::AddHandler(new wxICOHandler);
-  }
-  for(int i= 0; i<3; i++) {
-    wxIcon ic= load_icon(wackget_ico, sizeof(wackget_ico), i);
-
-    if(ic.IsOk()) {
-      icons_.AddIcon(ic);
-    }
-  }
+  icons_= wackget_icons();
   SetIcons(icons_);
-  idle_icon_= icons_.GetIcon(wxSize(16, 16));
-  busy_icon_= load_icon(busy_ico, sizeof(busy_ico), 0);
+  busy_icon_= wackget_busy_icon();
 
   /* Window placement (LastFrame*), checked against the screens that exist now */
   wxRect r(prefs::get_int("LastFrameX", -1), prefs::get_int("LastFrameY", -1),
@@ -246,9 +294,8 @@ MainFrame::MainFrame(): wxFrame(nullptr, wxID_ANY, "WackGet", wxDefaultPosition,
   SetSizer(new wxBoxSizer(wxVERTICAL));
   apply_skin();
 
-  if(prefs::get_int("ShowInSystray", 1) && wxTaskBarIcon::IsAvailable()) {
-    tray_= new Tray(this);
-    tray_->SetIcon(idle_bundle(), "WackGet");
+  if(prefs::get_int("ShowInSystray", 1)) {
+    make_tray();
   }
   register_hotkey();
   proxy_pass_= prefs::secret_load();
@@ -262,6 +309,8 @@ MainFrame::MainFrame(): wxFrame(nullptr, wxID_ANY, "WackGet", wxDefaultPosition,
     set_status_text(idle_msg_);
     e.Skip();
   });
+  Bind(wxEVT_SHOW, [this](wxShowEvent &e) { request_update(); e.Skip(); });      /* tray menu: Show/Hide */
+  Bind(wxEVT_ICONIZE, [this](wxIconizeEvent &e) { request_update(); e.Skip(); });
   Bind(wxEVT_SIZE, [this](wxSizeEvent &e) { remember_normal_rect(); e.Skip(); });
   Bind(wxEVT_MOVE, [this](wxMoveEvent &e) { remember_normal_rect(); e.Skip(); });
   Bind(wxEVT_DPI_CHANGED, [this](wxDPIChangedEvent &e) { CallAfter([this] { apply_skin(); }); e.Skip(); });
@@ -272,13 +321,7 @@ MainFrame::MainFrame(): wxFrame(nullptr, wxID_ANY, "WackGet", wxDefaultPosition,
     e.Skip();
   });
 #if wxUSE_HOTKEY
-  Bind(wxEVT_HOTKEY, [this](wxKeyEvent &) {
-    if(IsActive()) { /* hot key: hide when in front, otherwise bring to front */
-      Hide();
-    } else {
-      show_from_outside();
-    }
-  });
+  Bind(wxEVT_HOTKEY, [this](wxKeyEvent &) { toggle(); });
 #endif
   timer_.Bind(wxEVT_TIMER, &MainFrame::on_timer, this);
   timer_.Start(1000); /* once per second, like TIMER_UPDATE */
@@ -446,6 +489,35 @@ void MainFrame::show_hide()
   }
 }
 
+void MainFrame::toggle(int front)
+{
+  if(IsShown() && !IsIconized() && (front<0? IsActive(): front!=0)) {
+    Hide();
+  } else {
+    show_from_outside();
+  }
+}
+
+/* The StatusNotifier icon where the desktop shows those, else wxTaskBarIcon if there is a tray */
+void MainFrame::make_tray()
+{
+  if(tray_) {
+    return;
+  }
+#ifdef __WXGTK__
+  tray_= platform_make_tray(this);
+#endif
+  if(!tray_ && wxTaskBarIcon::IsAvailable()) {
+    tray_= new WxTray(this, busy_icon_);
+  }
+}
+
+void MainFrame::remove_tray()
+{
+  delete tray_;
+  tray_= nullptr;
+}
+
 void MainFrame::remember_normal_rect()
 {
   if(IsShown() && !IsIconized() && !IsMaximized()) {
@@ -500,6 +572,14 @@ void MainFrame::register_hotkey()
     hotkey_text_= "Ctrl + Alt + W"; /* Windows 11 keeps Win+W for Widgets */
   } else {
     wxMessageBox("Failed to register hot key", "Error", wxOK|wxICON_ERROR, this);
+  }
+#elif defined(__WXGTK__)
+  bool on= prefs::get_int("HotKey", 0)!=0;
+  hotkey_text_= platform_hotkey_start(this, on);
+  if(on && hotkey_text_.empty()) {
+    wxMessageBox("Failed to register hot key Ctrl + Alt + W: another program has it, or this desktop has no "
+                 "shortcuts portal.\n\nYou can make a keyboard shortcut in your desktop settings that runs:\n"
+                 "wackget --toggle", "Error", wxOK|wxICON_ERROR, this);
   }
 #endif
 }
@@ -556,16 +636,7 @@ void MainFrame::update()
   wg_text_tooltip(tip, sizeof(tip), t.downloading, t.queued, t.speed);
   wxString tipw= wxString::FromUTF8(tip);
   if(tray_) {
-    bool busy= prefs::get_int("TrayStatus", 1) && t.downloading>0;
-
-    if(busy!=tray_busy_ || tipw!=idle_msg_) {
-      tray_busy_= busy;
-      if(busy && busy_icon_.IsOk()) {
-        tray_->SetIcon(busy_icon_, tipw);
-      } else {
-        tray_->SetIcon(idle_bundle(), tipw);
-      }
-    }
+    tray_->set(prefs::get_int("TrayStatus", 1) && t.downloading>0, tipw, IsShown() && !IsIconized());
   }
   if(tipw!=idle_msg_) {
     idle_msg_= tipw;
@@ -760,6 +831,9 @@ void MainFrame::on_menu(wxCommandEvent &e)
     wxLaunchDefaultApplication(wxString::FromUTF8(d));
     break;
   }
+  case ID_TRAY_SHOWHIDE:
+    show_hide();
+    break;
   case wxID_EXIT:
     exit_app();
     break;
@@ -1153,15 +1227,12 @@ void MainFrame::apply_prefs()
 
   /* No tray on this desktop (e.g. GNOME without the AppIndicator extension): behave as if the
      tray were off, so closing the window never hides it somewhere unreachable. */
-  bool want_tray= prefs::get_int("ShowInSystray", 1)!=0 && wxTaskBarIcon::IsAvailable();
-  if(want_tray && !tray_) {
-    tray_= new Tray(this);
-    tray_busy_= false;
-    tray_->SetIcon(idle_bundle(), idle_msg_);
-  } else if(!want_tray && tray_) {
-    tray_->RemoveIcon();
-    tray_->Destroy();
-    tray_= nullptr;
+  if(prefs::get_int("ShowInSystray", 1)) {
+    make_tray();
+  } else if(tray_) {
+    remove_tray();
+  }
+  if(!tray_) {
     if(!IsShown()) {
       show_from_outside(); /* never leave the window unreachable */
     }
@@ -1195,11 +1266,7 @@ void MainFrame::exit_app()
   exiting_= true;
   timer_.Stop();
   q_.shutdown();
-  if(tray_) {
-    tray_->RemoveIcon();
-    tray_->Destroy();
-    tray_= nullptr;
-  }
+  remove_tray();
   Destroy();
 }
 
@@ -1214,11 +1281,7 @@ void MainFrame::on_close(wxCloseEvent &e)
     prefs::save();
     exiting_= true;
     q_.shutdown();
-    if(tray_) {
-      tray_->RemoveIcon();
-      tray_->Destroy();
-      tray_= nullptr;
-    }
+    remove_tray();
     e.Skip();
     return;
   }

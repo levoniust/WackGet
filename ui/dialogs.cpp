@@ -230,12 +230,17 @@ wxPanel *integration_page(wxWindow *book, Prefs &p, MainFrame *frame)
   p.hotkey= new wxCheckBox(wb, wxID_ANY, "Use &hot key to toggle WackGet:");
   p.hotkey->SetValue(prefs::get_int("HotKey", 0)!=0);
   wxString hk= frame->hotkey_text();
-  auto *field= new wxStaticText(wb, wxID_ANY, hk.empty()? wxString("Win + W"): hk, wxDefaultPosition,
+#ifdef __WXMSW__
+  wxString hk_default= "Win + W";
+#else
+  wxString hk_default= "Ctrl + Alt + W";
+#endif
+  auto *field= new wxStaticText(wb, wxID_ANY, hk.empty()? hk_default: hk, wxDefaultPosition,
                                 wxSize(page->FromDIP(110), -1), wxALIGN_CENTRE_HORIZONTAL|wxBORDER_SUNKEN);
   row->Add(p.hotkey, 0, wxALIGN_CENTER_VERTICAL|wxRIGHT, g);
   row->Add(field, 0, wxALIGN_CENTER_VERTICAL);
   wg->Add(row, 0, wxLEFT|wxRIGHT|wxBOTTOM, g);
-#if !wxUSE_HOTKEY
+#if !wxUSE_HOTKEY && !defined(__WXGTK__)
   p.hotkey->Enable(false);
   field->Enable(false);
 #endif
@@ -244,9 +249,13 @@ wxPanel *integration_page(wxWindow *book, Prefs &p, MainFrame *frame)
           0, wxLEFT|wxRIGHT|wxBOTTOM, g);
 #else
   if(!platform_assoc_supported()) {
-    wg->Add(new wxStaticText(wb, wxID_ANY, "File association and the hot key come with the Linux desktop work."),
+    wg->Add(new wxStaticText(wb, wxID_ANY, "File association needs xdg-mime (package xdg-utils)."),
             0, wxLEFT|wxRIGHT|wxBOTTOM, g);
   }
+  wg->Add(new wxStaticText(wb, wxID_ANY, "Ctrl + Alt + W on X11; on Wayland the desktop asks once and may\n"
+                                         "let you pick another key. Or make a keyboard shortcut in your\n"
+                                         "desktop settings that runs:  wackget --toggle"),
+          0, wxLEFT|wxRIGHT|wxBOTTOM, g);
 #endif
   sz->Add(wg, 0, wxEXPAND|wxALL, g);
   page->SetSizer(sz);
