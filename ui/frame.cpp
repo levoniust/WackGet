@@ -176,6 +176,11 @@ static wxIcon load_icon(const unsigned char *data, size_t len, int index)
 
 /* ------------------------------------------------------------------ frame */
 
+wxBitmapBundle MainFrame::idle_bundle() const
+{
+  return wxBitmapBundle::FromIconBundle(icons_); /* 16/32/48: sharp tray icon at any DPI */
+}
+
 static long frame_style()
 {
   long style= wxDEFAULT_FRAME_STYLE;
@@ -241,9 +246,9 @@ MainFrame::MainFrame(): wxFrame(nullptr, wxID_ANY, "WackGet", wxDefaultPosition,
   SetSizer(new wxBoxSizer(wxVERTICAL));
   apply_skin();
 
-  if(prefs::get_int("ShowInSystray", 1)) {
+  if(prefs::get_int("ShowInSystray", 1) && wxTaskBarIcon::IsAvailable()) {
     tray_= new Tray(this);
-    tray_->SetIcon(idle_icon_, "WackGet");
+    tray_->SetIcon(idle_bundle(), "WackGet");
   }
   register_hotkey();
   proxy_pass_= prefs::secret_load();
@@ -555,7 +560,11 @@ void MainFrame::update()
 
     if(busy!=tray_busy_ || tipw!=idle_msg_) {
       tray_busy_= busy;
-      tray_->SetIcon(busy && busy_icon_.IsOk()? busy_icon_: idle_icon_, tipw);
+      if(busy && busy_icon_.IsOk()) {
+        tray_->SetIcon(busy_icon_, tipw);
+      } else {
+        tray_->SetIcon(idle_bundle(), tipw);
+      }
     }
   }
   if(tipw!=idle_msg_) {
@@ -1142,11 +1151,13 @@ void MainFrame::apply_prefs()
                                                         GetWindowStyleFlag()&~wxSTAY_ON_TOP);
   SetMenuBar(prefs::get_int("ShowMenuBar", 1)? menubar_: nullptr);
 
-  bool want_tray= prefs::get_int("ShowInSystray", 1)!=0;
+  /* No tray on this desktop (e.g. GNOME without the AppIndicator extension): behave as if the
+     tray were off, so closing the window never hides it somewhere unreachable. */
+  bool want_tray= prefs::get_int("ShowInSystray", 1)!=0 && wxTaskBarIcon::IsAvailable();
   if(want_tray && !tray_) {
     tray_= new Tray(this);
     tray_busy_= false;
-    tray_->SetIcon(idle_icon_, idle_msg_);
+    tray_->SetIcon(idle_bundle(), idle_msg_);
   } else if(!want_tray && tray_) {
     tray_->RemoveIcon();
     tray_->Destroy();

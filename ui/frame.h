@@ -8,6 +8,7 @@
 #include <string>
 #include <vector>
 
+#include <wx/bmpbndl.h>
 #include <wx/frame.h>
 #include <wx/iconbndl.h>
 #include <wx/timer.h>
@@ -49,6 +50,7 @@ public:
   void show_initially();
 
   const wxIconBundle &icons() const { return icons_; }
+  wxBitmapBundle idle_bundle() const;
   wxString hotkey_text() const { return hotkey_text_; }
 
   /* ViewOwner */
