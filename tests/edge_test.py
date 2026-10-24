@@ -170,6 +170,46 @@ if WIN:
                 return True
         return False
 
+    class KEYBDINPUT(ctypes.Structure):
+        _fields_ = [("wVk", wintypes.WORD), ("wScan", wintypes.WORD), ("dwFlags", wintypes.DWORD),
+                    ("time", wintypes.DWORD), ("dwExtraInfo", ctypes.c_size_t)]
+
+    class INPUT(ctypes.Structure):
+        class _U(ctypes.Union):
+            _fields_ = [("ki", KEYBDINPUT), ("pad", ctypes.c_byte * 32)]
+        _anonymous_ = ("u",)
+        _fields_ = [("type", wintypes.DWORD), ("u", _U)]
+
+    user32.MapVirtualKeyW.argtypes = [wintypes.UINT, wintypes.UINT]
+
+    def send_keys(seq):
+        """(virtual key, 0 = down / 2 = up) pairs through SendInput, with scan codes"""
+        arr = (INPUT * len(seq))()
+        for i, (k, up) in enumerate(seq):
+            arr[i].type = 1  # INPUT_KEYBOARD
+            arr[i].ki = KEYBDINPUT(k, user32.MapVirtualKeyW(k, 0), up, 0, 0)
+        n = user32.SendInput(len(seq), arr, ctypes.sizeof(INPUT))
+        if n != len(seq):
+            print(f"  (SendInput sent {n} of {len(seq)}, error {ctypes.get_last_error()})", flush=True)
+
+    class GUITHREADINFO(ctypes.Structure):
+        _fields_ = [("cbSize", wintypes.DWORD), ("flags", wintypes.DWORD), ("hwndActive", wintypes.HWND),
+                    ("hwndFocus", wintypes.HWND), ("hwndCapture", wintypes.HWND), ("hwndMenuOwner", wintypes.HWND),
+                    ("hwndMoveSize", wintypes.HWND), ("hwndCaret", wintypes.HWND), ("rcCaret", wintypes.RECT)]
+
+    def focus_info():
+        g = GUITHREADINFO(cbSize=ctypes.sizeof(GUITHREADINFO))
+        user32.GetGUIThreadInfo(0, ctypes.byref(g))
+        cls = ctypes.create_unicode_buffer(64)
+        if g.hwndFocus:
+            user32.GetClassNameW(g.hwndFocus, cls, 64)
+        return f"active={g.hwndActive} focus={g.hwndFocus} ({cls.value})"
+
+    def topmost(pid):
+        user32.GetWindowLongW.argtypes = [wintypes.HWND, ctypes.c_int]
+        hs = windows(pid, "WackGet")
+        return bool(hs) and bool(user32.GetWindowLongW(hs[0], -20) & 0x8)  # GWL_EXSTYLE, WS_EX_TOPMOST
+
     def command(pid, title, cmd):
         """Send a menu/button command straight to the window (no focus needed)"""
         for h in windows(pid, title):
@@ -208,16 +248,11 @@ if WIN:
         if not hs or not focus(hs[0]):
             print(f"  (could not bring '{title}' to the front for {combo})", flush=True)
             return False
-        vk = {"ctrl": 0x11, "alt": 0x12}
+        vk = {"ctrl": 0x11, "alt": 0x12, "shift": 0x10}
         parts = combo.split("+")
-        mods = [vk[p] for p in parts[:-1]]
-        key = ord(parts[-1].upper())
-        for m in mods:
-            user32.keybd_event(m, 0, 0, 0)
-        user32.keybd_event(key, 0, 0, 0)
-        user32.keybd_event(key, 0, 2, 0)
-        for m in reversed(mods):
-            user32.keybd_event(m, 0, 2, 0)
+        seq = [(vk[m], 0) for m in parts[:-1]] + [(ord(parts[-1].upper()), 0), (ord(parts[-1].upper()), 2)] + \
+              [(vk[m], 2) for m in reversed(parts[:-1])]
+        send_keys(seq)
         return True
 
     def set_clipboard(text, html=False):
@@ -369,6 +404,26 @@ def t_crash_resume():
               wait_for(lambda: good_file(c.path("big.bin"), size), 60),
               str({n: os.path.getsize(c.path(n)) for n in os.listdir(c.dl)}))
         check("it resumed (asked for the rest only)", any(s > 0 for _, s in ranges_seen), str(ranges_seen))
+    finally:
+        c.done()
+
+
+def t_keys():
+    """Windows: do typed shortcuts reach WackGet? Ctrl+A (Always on top) works whatever the
+    clipboard holds, so it tells key delivery apart from the paste rules."""
+    c = Case("keys")
+    try:
+        p = c.start()
+        wait_for(lambda: windows(p.pid, "WackGet"), 15)
+        time.sleep(1)
+        before = topmost(p.pid)
+        sent = keys(p.pid, "WackGet", "ctrl+a")
+        print("  " + focus_info(), flush=True)
+        after = wait_for(lambda: topmost(p.pid) != before, 5)
+        if sent:
+            check("typed Ctrl+A (Always on top) reaches WackGet", after, f"topmost {before} -> {topmost(p.pid)}")
+        else:
+            print("  (no keyboard focus on this desktop: typed-key checks skipped)", flush=True)
     finally:
         c.done()
 
@@ -529,7 +584,7 @@ def main():
     tests = [t_unicode, t_same_name, t_long_link, t_crash_resume, t_paste_html, t_paste_many, t_second_instance,
              t_exit_prompt]
     if WIN:
-        tests += [t_dialogs, t_tray_close]  # Linux: dialogs + tray in tests/linux_desktop.py
+        tests = [t_keys] + tests + [t_dialogs, t_tray_close]  # Linux: dialogs + tray in tests/linux_desktop.py
     if "--internet" in sys.argv:
         tests.append(t_internet)
     for t in tests:
