@@ -24,6 +24,12 @@ class DemoHandler(run_engine.Handler):
     """/dl/<size>/<bytes per second, 0 = flat out>/<name> serves that many bytes at that rate
     (in the path, not a query, which would become part of the file name); the rest as in run_engine."""
 
+    def handle(self):
+        try:
+            super().handle()
+        except ConnectionError:
+            pass  # WackGet closed mid-transfer at the end of a screenshot
+
     def do_GET(self):
         url = urllib.parse.urlparse(self.path)
         if not url.path.startswith("/dl/"):

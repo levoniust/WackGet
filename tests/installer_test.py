@@ -11,7 +11,7 @@ import time
 import winreg
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from edge_test import check, failures, keys, user32, wait_for, wintypes  # noqa: E402
+from edge_test import check, failures, focus, user32, wait_for, wintypes  # noqa: E402
 import ctypes  # noqa: E402
 
 DIR = os.path.join(os.environ["LOCALAPPDATA"], "Programs", "WackGet")
@@ -47,12 +47,14 @@ def shot(hwnd, path):
 
 
 def press_enter(hwnd):
-    user32.keybd_event(0x12, 0, 0, 0)
-    user32.keybd_event(0x12, 0, 2, 0)
-    user32.SetForegroundWindow(hwnd)
-    time.sleep(0.4)
-    user32.keybd_event(0x0D, 0, 0, 0)
-    user32.keybd_event(0x0D, 0, 2, 0)
+    """Enter on the page (its default button: I Agree / Next / Install / Close); if this desktop
+    won't give us the focus, click that button by its id (IDOK) instead"""
+    if focus(hwnd):
+        user32.keybd_event(0x0D, 0, 0, 0)
+        user32.keybd_event(0x0D, 0, 2, 0)
+    else:
+        print("  (no focus: clicking the button instead)", flush=True)
+        user32.PostMessageW(hwnd, 0x0111, 1, 0)  # WM_COMMAND IDOK
 
 
 def uninstall_entries():

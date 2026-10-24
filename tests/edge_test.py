@@ -48,6 +48,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def log_message(self, *args):
         pass
 
+    def handle(self):
+        try:
+            super().handle()
+        except ConnectionError:
+            pass  # WackGet was killed or stopped mid-transfer: that's the test
+
     def do_GET(self):
         url = urllib.parse.urlparse(self.path)
         _, _, size, rate, _ = url.path.split("/", 4)
@@ -140,15 +146,42 @@ if WIN:
         for h in windows(pid, "WackGet"):
             user32.PostMessageW(h, 0x0010, 0, 0)  # WM_CLOSE
 
+    kernel32 = ctypes.WinDLL("kernel32")
+    user32.GetForegroundWindow.restype = wintypes.HWND
+
+    def focus(hwnd):
+        """Windows only lets the program the user last used change the foreground window, so
+        borrow the foreground thread's input state for a moment. True if it worked."""
+        for _ in range(5):
+            fg = user32.GetForegroundWindow()
+            me = kernel32.GetCurrentThreadId()
+            other = user32.GetWindowThreadProcessId(fg, None) if fg else 0
+            if other and other != me:
+                user32.AttachThreadInput(me, other, True)
+            user32.keybd_event(0x12, 0, 0, 0)  # an Alt tap also unlocks it
+            user32.keybd_event(0x12, 0, 2, 0)
+            user32.ShowWindow(hwnd, 5)  # SW_SHOW
+            user32.BringWindowToTop(hwnd)
+            user32.SetForegroundWindow(hwnd)
+            if other and other != me:
+                user32.AttachThreadInput(me, other, False)
+            time.sleep(0.4)
+            if user32.GetForegroundWindow() == hwnd:
+                return True
+        return False
+
+    def command(pid, title, cmd):
+        """Send a menu/button command straight to the window (no focus needed)"""
+        for h in windows(pid, title):
+            user32.PostMessageW(h, 0x0111, cmd, 0)  # WM_COMMAND
+
     def keys(pid, title, combo):
-        """Bring the window forward and type a key combination like 'ctrl+v' or 'n'"""
+        """Bring the window forward and type a key combination like 'ctrl+v' or 'n'. Returns
+        False if the window couldn't be made the foreground one (then the keys are not sent)."""
         hs = windows(pid, title)
-        if not hs:
+        if not hs or not focus(hs[0]):
+            print(f"  (could not bring '{title}' to the front for {combo})", flush=True)
             return False
-        user32.keybd_event(0x12, 0, 0, 0)  # an Alt tap lets a background process take the foreground
-        user32.keybd_event(0x12, 0, 2, 0)
-        user32.SetForegroundWindow(hs[0])
-        time.sleep(0.5)
         vk = {"ctrl": 0x11, "alt": 0x12}
         parts = combo.split("+")
         mods = [vk[p] for p in parts[:-1]]
@@ -202,6 +235,9 @@ else:
 
     def kill(p):
         p.kill()
+
+    def command(pid, title, cmd):
+        pass
 
 
 # ---------------------------------------------------------------- the tests
@@ -318,10 +354,16 @@ def t_paste_html():
         wait_for(lambda: windows(p.pid, "WackGet"), 15)
         set_clipboard(f'<p>Files: <a href="{BASE}/data/2500/0/from%20page.bin">from page</a> and '
                       f'<a href="javascript:alert(1)">bad</a></p>', html=True)
-        keys(p.pid, "WackGet", "ctrl+v")
-        check("pasted web page (HTML clipboard): link downloaded",
-              wait_for(lambda: good_file(c.path("from page.bin"), 2500), 20),
-              str(os.listdir(c.dl) if os.path.isdir(c.dl) else "nothing"))
+        sent = keys(p.pid, "WackGet", "ctrl+v")
+        got = wait_for(lambda: good_file(c.path("from page.bin"), 2500), 20 if sent else 2)
+        if sent or not WIN:
+            check("Ctrl+V of a web page (HTML clipboard): link downloaded", got,
+                  str(os.listdir(c.dl) if os.path.isdir(c.dl) else "nothing"))
+        if WIN and not got:  # no keyboard focus on this desktop: use the menu command instead
+            command(p.pid, "WackGet", 5033)  # wxID_PASTE = Queue > Add From Clipboard
+            got = wait_for(lambda: good_file(c.path("from page.bin"), 2500), 20)
+            check("Add From Clipboard of a web page (HTML clipboard): link downloaded", got,
+                  str(os.listdir(c.dl) if os.path.isdir(c.dl) else "nothing"))
         check("javascript: link ignored", os.path.isdir(c.dl) and len(os.listdir(c.dl)) == 1)
     finally:
         c.done()
@@ -334,7 +376,8 @@ def t_paste_many():
         p = c.start()
         wait_for(lambda: windows(p.pid, "WackGet"), 15)
         set_clipboard("\n".join(f"{BASE}/data/{1000 + i}/0/f{i:03d}.bin" for i in range(n)))
-        keys(p.pid, "WackGet", "ctrl+v")
+        if not keys(p.pid, "WackGet", "ctrl+v"):
+            command(p.pid, "WackGet", 5033)
         ok = wait_for(lambda: os.path.isdir(c.dl) and len(os.listdir(c.dl)) >= n, 120)
         bad = [i for i in range(n) if not good_file(c.path(f"f{i:03d}.bin"), 1000 + i)]
         check(f"{n} pasted links all downloaded intact", ok and not bad, f"bad: {bad[:10]}")
@@ -371,7 +414,10 @@ def t_exit_prompt():
         asked = wait_for(lambda: windows(p.pid, "Confirm"), 10)
         check("closing with an unfinished queue asks to save it", asked)
         if asked:
-            keys(p.pid, "Confirm", "alt+n" if not WIN else "n")
+            if WIN:
+                command(p.pid, "Confirm", 7)  # IDNO: the message box's No button
+            else:
+                keys(p.pid, "Confirm", "alt+n")
         try:
             p.wait(10)
             check("No: WackGet exits", True)
